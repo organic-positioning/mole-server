@@ -1,0 +1,106 @@
+Mole Server Installation Instructions
+
+* Architectural Overview *
+The Mole Server consists of four parts: 
+
+(a) static web server
+Stores fingerprint maps for places, where the world of places is
+organized into a hierarchy.  E.g.:
+http://mole.research.nokia.com/map/USA/Massachusetts/Cambridge/4
+Cambridge Center/sig.xml
+
+(b) application server
+Tells clients which static web page to use based on the WiFi MACs they
+currently see.
+Handles crowdsourced binds from clients, i.e., user contributed
+fingerprints.  Takes JSON-encoded input from clients and stores it in
+the database.
+
+(c) fingerprint builder
+Periodically looks for new binds from clients and turns them into new
+fingerprints for the static web server.
+
+(d) database
+Standard MySQL database, stores user-contributed locations, binds, and
+the current fingerprints for each location.
+
+The four parts may be replicated and/or run on different machines.
+
+######################################################################
+* Installation Tested on Ubuntu 10.10 *
+
+Packages to install:
+(Note: previously installed "emacs" package.)
+git
+cherokee
+openjdk-6-jdk
+ant
+libxml-simple-perl
+libio-socket-ssl-perl
+mysql-client-5.1
+liblog-log4perl-perl
+liblog-dispatch-filerotate-perl
+libjetty-extra-java
+libconfig-tiny-perl
+screen
+
+If using Amazon (AWS), install package:
+libnet-amazon-s3-perl
+(If you do not, you may need to comment out in builder.pl)
+
+If you are running the DB server:
+mysql-server-5.1
+
+
+Directories:
+# mkdir /var/www/map
+# chown www-data /var/www/map
+# mkdir /var/log/mole
+# chown www-data /var/log/mole
+
+Download Server Code:
+(If you have ssh access, use different URL)
+$ git clone git://github.com/ledlie/mole-server.git
+
+
+Database:
+- Create "mole" database
+  - # mysql -u root -p
+  - mysql> create database mole;
+  - mysql> grant all on mole.* to 'moleuser'@'localhost' identified by 'pw';
+- Create tables
+ - ./install-db.sh
+ - Enter your database password when prompted
+ - This just sources each schema file in order (mysql -u moleuser -p mole)
+
+
+Fingerprint Builder:
+- If you are using S3, download the appropriate S3 library for perl
+- Otherwise, comment out the three lines in builder.pl:
+  - # use S3:: ...
+- Change builder-example.cfg as you wish; e.g. the db password
+- As www-data: perl -w builder.pl -c builder-example.cfg
+
+
+Mole Application Server:
+- As your 'regular' user, build it: ant jar
+- Set any variables in config/moleserver.cfg, like the db password
+- As www-data: ./runServer.pl
+- Logs in /var/log/mole/server.log
+- In the default case, this attaches to port 8080 and the static web
+  server runs on 80.
+
+
+Point your Mole Client at this instance:
+- Clear out the existing cache and config:
+  rm -rf $HOME/.mole $HOME/.config/Nokia/Mole.conf
+- Start the daemon and the binder
+  ./moled -d -s http://10.200.200.10:8080 -m http://10.200.200.10
+  ./mole-binder -d -s http://10.200.200.10:8080 -m http://10.200.200.10
+
+
+Recommendations:
+- Run the two servers using 'screen'
+  - When you su to the www-data, you may want to switch to bash (or
+  some other shell)
+- builder.pl can be used to rebuild the fingerprint database
