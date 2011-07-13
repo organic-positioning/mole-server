@@ -44,20 +44,23 @@ use Config::Tiny;
 ######################################################################
 # Constants, global parameters
 
-my $VERSION = 'Version: 0.2.2';
+my $VERSION = 'Version: 0.3.1';
 
 # How often should fingerprints be rebuilt in seconds?
 my $BUILD_PERIOD = 10;
 
 # Attempt to use this many bind minutes at least
-my $TARGET_BIND_MINUTES = 2;
+my $TARGET_BIND_MINUTES = 10;
 
-my $MAX_APS_PER_FP = 40;
+my $MAX_APS_PER_FP = 50;
 
 my $AVG_STDDEV = 1.0;
 
 # Output location
 my $OUT_DIR = '/var/www/map';
+
+# set to 1 to generate histograms
+my $useHistograms = 1;
 
 # Log
 my $log;
@@ -154,6 +157,7 @@ sub init {
         
 
     # connect to db
+    $log->info ("Connecting to database ".$dsn);
     &db_connect ($self);
 
 }
@@ -260,11 +264,12 @@ sub process_bind {
 
     # was: "and stamp >= ? ".
 
+    # gaussian overlap generation
     $self->{get_readings_stmt} = $self->{dbi}->prepare_cached
 	("SELECT bssid, count(level) as count, avg(level) as avg, ".
 	 "stddev(level) as stddev, min(level) as min, max(level) as max ".
 	 "from ap_readings where location_id=? ".
-	 "and stamp >= date_sub(?, interval 150 second) ".
+	 "and stamp >= date_sub(?, interval 600 second) ".
 	 "group by bssid order by max asc, count desc limit $MAX_APS_PER_FP");
 
     $self->{get_readings_stmt}->execute ($location_id, $earliest_end_stamp);
@@ -272,12 +277,15 @@ sub process_bind {
     my $ap_stats = $self->{get_readings_stmt}->fetchall_arrayref(
 	{ bssid => 1, count => 1, avg => 1, stddev => 1, min => 1, max => 1 });
 
+
     # for some unknown reason, "select lower(bssid)" does not give
     # this same result...
 
     foreach my $ap_stat (@$ap_stats) {
 	$ap_stat->{bssid} = lc($ap_stat->{bssid});
 	$log->debug ("ap lc ".$ap_stat->{bssid});
+	# placeholder for histogram, whether or not it is filled
+	$ap_stat->{histogram} = '';
     }
 
     my %ap2weight = ();
@@ -316,6 +324,39 @@ sub process_bind {
 
     }
 
+    # histogram generation
+    if ($useHistograms) {
+
+	$self->{get_histogram_stmt} = $self->{dbi}->prepare_cached
+	    ("SELECT bssid, count(level) as count, level ".
+	     "from ap_readings where location_id=? ".
+	     "and stamp >= date_sub(?, interval 600 second) ".
+	     "group by bssid,level order by level asc");
+
+	$self->{get_histogram_stmt}->execute ($location_id, $earliest_end_stamp);
+
+	my $mac_readings = $self->{get_histogram_stmt}->fetchall_arrayref(
+	    { bssid => 1, count => 1, level => 1 });
+	my %bssid2hist = ();
+	foreach my $mac_reading (@$mac_readings) {
+	    my $bssid = lc ($mac_reading->{bssid});
+	    if (exists ($bssid2hist{$bssid})) {
+		$bssid2hist{$bssid} .= ' ';
+	    }
+	    $bssid2hist{$bssid} .= $mac_reading->{level} .'='.$mac_reading->{count};
+	}
+	foreach my $ap_stat (@$ap_stats) {
+	    if (exists ($bssid2hist{$ap_stat->{bssid}})) {
+		$ap_stat->{histogram} = $bssid2hist{$ap_stat->{bssid}};
+	    } else {
+		$log->warn ("histogram mismatch bssid ".$ap_stat->{bssid}." location ".$location_id);
+	    }
+	}
+
+	$self->{get_histogram_stmt}->finish ();
+
+    }
+
 
 
     # Update location_ap_stat table
@@ -350,12 +391,12 @@ sub process_bind {
 
 	    $self->{set_location_ap_stat_active_stmt} = $self->{dbi}->prepare_cached
 		("UPDATE location_ap_stat SET stamp=?, avg=?, stddev=?, ".
-		 "min=?, max=?, weight=?, is_active=1 ".
+		 "min=?, max=?, weight=?, is_active=1, histogram=?".
 		 "where id=?");
 	    $self->{set_location_ap_stat_active_stmt}->execute
 		($earliest_end_stamp,
 		 $ap_stat->{avg}, $ap_stat->{stddev}, $ap_stat->{min}, $ap_stat->{max},
-		 $ap2weight{$location_ap_stat->{bssid}}, $location_ap_stat->{id});
+		 $ap2weight{$location_ap_stat->{bssid}}, $ap_stat->{histogram}, $location_ap_stat->{id});
 
 	    $log->debug ("AP ".$location_ap_stat->{bssid}." updated in space ".$space_desc->{fq_space_name});
 
@@ -380,12 +421,12 @@ sub process_bind {
 	if (!defined($preexisting_aps{$ap_stat->{bssid}})) {
 
 	    $self->{insert_location_ap_stat_stmt} = $self->{dbi}->prepare_cached
-		("INSERT into location_ap_stat (location_id, bssid, stamp, avg, stddev, min, max, weight) ".
-		 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+		("INSERT into location_ap_stat (location_id, bssid, stamp, avg, stddev, min, max, weight, histogram) ".
+		 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
 	    $self->{insert_location_ap_stat_stmt}->execute
 		($location_id, $ap_stat->{bssid}, $earliest_end_stamp,
 		 $ap_stat->{avg}, $ap_stat->{stddev}, $ap_stat->{min}, $ap_stat->{max},
-		 $ap2weight{$ap_stat->{bssid}});
+		 $ap2weight{$ap_stat->{bssid}}, $ap_stat->{histogram});
 	    $self->{insert_location_ap_stat_stmt}->finish ();
 
 	    $log->debug ("AP ".$ap_stat->{bssid}." inserted in space ".$space_desc->{fq_space_name});
@@ -411,7 +452,7 @@ sub process_area {
     $log->debug ("START process_area ".$area_desc->{fq_area});
 
     $self->{get_space_ap_stat_join_stmt} = $self->{dbi}->prepare_cached
-	("SELECT name, bssid, avg, stddev, weight from location_ap_stat, locations ".
+	("SELECT name, bssid, avg, stddev, weight, histogram from location_ap_stat, locations ".
 	 "where country=? and region=? and city=? and area=? and ".
 	 "locations.id = location_ap_stat.location_id ".
 	 "and location_ap_stat.is_active=1 ".
@@ -427,7 +468,7 @@ sub process_area {
     } else {
 
 	my $sub_fps = $self->{get_space_ap_stat_join_stmt}->fetchall_arrayref(
-	    { name => 1, bssid => 1, avg => 1, stddev => 1, weight => 1 } );
+	    { name => 1, bssid => 1, avg => 1, stddev => 1, weight => 1, histogram => 1 } );
 
 	foreach my $sub_fp (@$sub_fps) {
 	    $sub_fp->{bssid} = lc ($sub_fp->{bssid});
@@ -482,6 +523,7 @@ sub process_area {
 	    $ap{avg} = $sub_fp->{avg};
 	    $ap{stddev} = $sub_fp->{stddev};
 	    $ap{weight} = $sub_fp->{weight};
+	    $ap{histogram} = $sub_fp->{histogram};
 	    
 	    my $key = $sub_fp->{bssid};
 	    $macs{$key} = \%ap;
@@ -956,10 +998,11 @@ sub handle_new_places {
 sub run {
     my ($self) = @_;
 
+    # connect to db
+    &db_connect ($self);
+
     $self->{dbi}->{AutoCommit} = 0;
     $self->{dbi}->{RaiseError} = 1;
-
-
 
     eval {
 
@@ -983,7 +1026,7 @@ sub run {
 sub db_connect {
     my ($self) = @_;
 
-    $log->info ("Connecting to database ".$dsn);
+    #$log->debug ("Connecting to database ".$dsn);
     
     $self->{dbi} = DBI->connect_cached
 	($dsn, $db_user, $db_pw, 

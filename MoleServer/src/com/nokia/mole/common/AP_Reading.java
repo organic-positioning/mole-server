@@ -21,33 +21,37 @@
 package com.nokia.mole.common;
 
 import java.io.Serializable;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+
 
 import org.eclipse.jetty.util.log.Log;
 
+import org.apache.log4j.Logger;
 
 public class AP_Reading implements Serializable {
 
 	private static final long serialVersionUID = 1L;
+	static Logger log = Logger.getLogger(AP_Reading.class);
 	
 	// TODO check input data so that it matches with the table
 	private final String bssid;
+	private String pBssid;
 	private final String ssid;
+	private String pSsid;
 	private final int frequency;
 	// listed positively in table;
 	private final int level;
+	private int pLevel;
+
+    public static final Pattern MacPattern = Pattern.compile("^[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]$");
 	
 	public String getBssid() {
-		if (bssid.length() <= 20) {
-			return bssid;
-		}
-		return bssid.substring(0, 20);
+	    return pBssid;
 	}
 
 	public String getSsid() {
-		if (ssid.length() <= 20) {
-			return ssid;
-		}
-		return ssid.substring(0, 20);
+		return pSsid;
 	}
 
 	public int getFrequency() {
@@ -55,7 +59,7 @@ public class AP_Reading implements Serializable {
 	}
 
 	public int getLevel() {
-		return level;
+		return pLevel;
 	}
 
 	// for gson
@@ -67,15 +71,46 @@ public class AP_Reading implements Serializable {
 	}
 	
 	public String toString () {
-		return "["+bssid+","+ssid+","+frequency+","+level+"]";
+		return "["+pBssid+","+pSsid+","+frequency+","+pLevel+"]";
 	}
+
+    public boolean validate () {
+	pBssid = bssid.toLowerCase();
+	pSsid = ssid;
+	if (pSsid.length() > 20) {
+	    pSsid = ssid.substring(0, 20);
+	}
+
+	// TODO canonicalize MAC addresses
+
+	Matcher matcher = MacPattern.matcher (pBssid);
+	if (!matcher.find()) {
+	    log.warn ("invalid bssid "+bssid);
+	    return false;
+	}
+
+	pLevel = level;
+	if (pLevel < 0) {
+	    pLevel = -1 * pLevel;
+	}
+
+	if (pLevel < 20 || pLevel > 100) {
+	    log.warn ("rssi out of range" + pBssid + " " + pLevel);
+	    // bad value
+	    return false;
+	}
+
+	return true;
+    }
 	
 	public AP_Reading(final String _bssid, final String _ssid, final int _frequency, final int _level) {
 		//if (_bssid.matches("^\p{XDigit}\p{XDigit}:\p{XDigit}\p{XDigit}:\p{XDigit}\p{XDigit}:\p{XDigit}\p{XDigit}:\p{XDigit}\p{XDigit}$") {
 
+	    log.debug ("gson calling AP_Reading ctor");
+
 		if (true) {
 
-			this.bssid = _bssid.toUpperCase();
+			this.bssid = _bssid.toLowerCase();
 		} else {
 			Log.debug("rejecting bssid "+_bssid);
 			this.bssid = null;

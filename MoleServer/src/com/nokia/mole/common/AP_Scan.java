@@ -23,6 +23,7 @@ package com.nokia.mole.common;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 
 import org.apache.log4j.Logger;
@@ -48,12 +49,32 @@ public class AP_Scan implements Serializable {
 		//log.debug ("new scan reading count "+readings.size());
 	}
 
-	public String toString() {
-		StringBuffer buffer = new StringBuffer ();
-		for (AP_Reading reading : readings) {
-			buffer.append(reading);
+	public boolean validate() {
+	    boolean valid = false;
+	    for (Iterator<AP_Reading> i = readings.iterator(); i.hasNext(); ) {
+		AP_Reading reading = i.next();
+		if (!reading.validate()) {
+		    i.remove();
+		    log.debug ("tossing invalid reading");
+		} else {
+		    valid = true;
 		}
-		return new String (buffer);
+	    }
+	    return valid;
+	}
+
+	public String toString() {
+		int minLevel = 0;
+		int maxLevel = 0;
+		for (AP_Reading reading : readings) {
+			if (maxLevel == 0 || reading.getLevel() > maxLevel) {
+				maxLevel = reading.getLevel();
+			}
+			if (minLevel == 0 || reading.getLevel() < minLevel) {
+				minLevel = reading.getLevel();
+			}
+		}
+		return "scan "+stamp+" readings="+readings.size()+" minRssi="+minLevel+" maxRssi="+maxLevel;
 	}
 	
 	public static AP_Scan copy(AP_Scan scan) {

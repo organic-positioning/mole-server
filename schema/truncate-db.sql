@@ -16,7 +16,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # 
 
-delete from locations;
-delete from binds;
-delete from ap_readings;
 delete from location_ap_stat;
+delete from ap_readings;
+delete from binds;
+delete from locations;
+
+
+

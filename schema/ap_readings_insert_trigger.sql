@@ -31,10 +31,12 @@ BEGIN
   WHERE new.bind_id = binds.id;
 
   IF NEW.stamp > _end_stamp THEN
+    -- insert into log values ('ap trigger A');
     SET NEW.location_id = NULL;
   END IF;
 
   IF NEW.stamp < _start_stamp THEN
+    -- insert into log values ('ap trigger B');
     SET NEW.location_id = NULL;
   END IF;
 

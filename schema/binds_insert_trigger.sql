@@ -30,22 +30,29 @@ delimiter //
 CREATE TRIGGER binds_insert_trigger BEFORE INSERT ON binds
 FOR EACH ROW
 BEGIN
-  IF TIMESTAMPDIFF(minute,NEW.start_stamp, NEW.bind_stamp) > 2 THEN
+  -- insert into log values ('start binds_insert_trigger');
+  IF TIMESTAMPDIFF(minute,NEW.start_stamp, NEW.bind_stamp) > 30 THEN
+    -- insert into log values ('A');
     SET NEW.location_id = NULL;
   END IF;
-  IF TIMESTAMPDIFF(minute,NEW.end_stamp, NEW.bind_stamp) > 10 THEN
+  IF TIMESTAMPDIFF(minute,NEW.end_stamp, NEW.bind_stamp) > 30 THEN
+    -- insert into log values ('B');
     SET NEW.location_id = NULL;
   END IF;
   IF NEW.end_stamp < NEW.start_stamp THEN
+    -- insert into log values ('C');
     SET NEW.location_id = NULL;
   END IF;
   IF NEW.start_stamp < date_sub(now(), interval 1 day) THEN
+    -- insert into log values ('D');
     SET NEW.location_id = NULL;
   END IF;
   IF NEW.end_stamp > date_add(now(), interval 1 day) THEN
+    -- insert into log values ('E');
     SET NEW.location_id = NULL;
   END IF;
   IF TIMESTAMPDIFF(minute,NEW.end_stamp,NEW.start_stamp) > 120 THEN
+    -- insert into log values ('F');
     SET NEW.location_id = NULL;
   END IF;
 END;
@@ -62,10 +69,10 @@ END;
 CREATE TRIGGER binds_update_trigger BEFORE UPDATE ON binds
 FOR EACH ROW
 BEGIN
-  IF TIMESTAMPDIFF(minute,NEW.start_stamp, NEW.bind_stamp) > 2 THEN
+  IF TIMESTAMPDIFF(minute,NEW.start_stamp, NEW.bind_stamp) > 30 THEN
     SET NEW.location_id = NULL;
   END IF;
-  IF TIMESTAMPDIFF(minute,NEW.end_stamp, NEW.bind_stamp) > 10 THEN
+  IF TIMESTAMPDIFF(minute,NEW.end_stamp, NEW.bind_stamp) > 30 THEN
     SET NEW.location_id = NULL;
   END IF;
   IF NEW.end_stamp < NEW.start_stamp THEN

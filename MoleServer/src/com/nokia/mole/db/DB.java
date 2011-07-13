@@ -213,7 +213,7 @@ public class DB {
 	}
 	
 	private boolean connect () {
-	
+		
 		// TODO use jetty session pooling
 		// http://docs.codehaus.org/display/JETTY/Session+Clustering+with+a+Database
 		// http://dev.mysql.com/tech-resources/articles/connection_pooling_with_connectorj.html
@@ -297,7 +297,7 @@ public class DB {
 			log.debug ("bind setInt est_location_id="+est_location_id);
 		} else {
 			bind_insert_stmt.setNull(5, java.sql.Types.INTEGER);
-			log.debug ("bind setNull est_location_id=NULL");
+			log.debug ("bind set est_location_id=NULL");
 		}
 		bind_insert_stmt.setNString(6, bind.cookie.cookie);
 		bind_insert_stmt.setNString(7, bind.device_model);
@@ -575,10 +575,15 @@ public class DB {
 		synchronized (binds_shadow) {
 			for (Bind bind : binds_shadow) {
 				try {
-					//connection.setAutoCommit(false);
+					// Without this commit barrier, the builder can read the bind from the db
+					// before it is all there -- i.e., some scans are missing
+					// producing a broken signature.
+					// This has been observed -- it's not theoretical.
+					
+					connection.setAutoCommit(false);
 					insertBind (bind);
-					//connection.commit();
-					//connection.setAutoCommit(true);
+					connection.commit();
+					connection.setAutoCommit(true);
 
 				} catch (MySQLIntegrityConstraintViolationException ex) {
 					// unfortunately the generic SQLIntegrityConstraintViolationException

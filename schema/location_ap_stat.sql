@@ -27,6 +27,7 @@ CREATE TABLE `location_ap_stat` (
 `max` TINYINT UNSIGNED NOT NULL,
 `weight` FLOAT(3,3) NOT NULL,
 `is_active` TINYINT(1) DEFAULT '1',
+`histogram` VARCHAR(512) NOT NULL,
 PRIMARY KEY (id),
 INDEX (bssid),
 INDEX (location_id),
