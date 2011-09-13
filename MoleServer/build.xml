@@ -9,7 +9,7 @@
   <property name="config" location="config" />
   <property name="log" location="log" />
   
-  <property name="version" value="0.1.1" />
+  <property name="version" value="0.6.0" />
   
   <property name="moleserver-jar" value="MoleServer-${version}.jar" />
   <property name="moleserver.config" value="${moleserver.cfg}" />

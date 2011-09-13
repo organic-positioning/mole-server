@@ -32,6 +32,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -270,8 +271,8 @@ public class DB {
 		if (bind_insert_stmt == null) {
 			bind_insert_stmt = connection.prepareStatement
 			("insert into binds (start_stamp, bind_stamp, end_stamp, location_id, est_location_id,"+
-			"cookie, device_model, wifi_model, client_ip, client_port, client_version)"+
-			 " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"cookie, device_model, wifi_model, client_ip, client_port, client_version, source)"+
+			 " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			 Statement.RETURN_GENERATED_KEYS);
 		}
 
@@ -305,6 +306,7 @@ public class DB {
 		bind_insert_stmt.setNString (9, bind.client_ip);
 		bind_insert_stmt.setInt (10, bind.client_port);
 		bind_insert_stmt.setInt (11, bind.version);
+		bind_insert_stmt.setNString (12, bind.source);
 		
 		bind_insert_stmt.executeUpdate();
 		
@@ -320,6 +322,7 @@ public class DB {
 		log.debug ("inserted bind_id= "+bind_id);
 		bindInsertRes.close();
 
+		if (bind.ap_scans != null) {
 		if (ap_reading_insert_stmt == null) {
 
 			ap_reading_insert_stmt = connection.prepareStatement
@@ -348,7 +351,8 @@ public class DB {
 
 		}
 
-		log.debug ("inserted readings for bind_id= "+bind_id+ "readings="+bind.ap_scans.size());
+		log.debug ("inserted readings for bind_id= "+bind_id+ " readings="+bind.ap_scans.size());
+		}
 		
 		synchronized (last_db_ping) {
 			last_db_ping= new Date ();
@@ -371,26 +375,31 @@ public class DB {
 		
 		if (loc_query_stmt == null) {
 			loc_query_stmt = connection.prepareStatement
-			("select id from locations where country=? and region=? and city=? and area=? and name=?");
+			("select id from locations where country=? and region=? and city=? and area=? and floor=? and name=?");
 		}
 
 		loc_query_stmt.setNString(1, location.getCountry());
 		loc_query_stmt.setNString(2, location.getRegion());
 		loc_query_stmt.setNString(3, location.getCity());
 		loc_query_stmt.setNString(4, location.getArea());
-		loc_query_stmt.setNString(5, location.getSpace());
+		loc_query_stmt.setInt(5, location.getFloor());
+		loc_query_stmt.setNString(6, location.getSpace());
 
 		ResultSet loc_res = loc_query_stmt.executeQuery();
 		boolean exists = loc_res.first ();
 
+		String shortName = 
+		    location.getArea()+"/"+location.getFloor()
+		    +"/"+location.getSpace();
 		if (exists) {
 			location_id = loc_res.getInt(1);
-
+			log.debug("getLocationId fetched id "+
+				  location_id + " "+shortName);
 		} else {
 
 			if (loc_insert_stmt == null) {
 				loc_insert_stmt = connection.prepareStatement
-				    ("insert into locations (country, region, city, area, name) values (?, ?, ?, ?, ?)",
+				    ("insert into locations (country, region, city, area, floor, name) values (?, ?, ?, ?, ?, ?)",
 				     Statement.RETURN_GENERATED_KEYS);
 			}
 
@@ -398,8 +407,11 @@ public class DB {
 			loc_insert_stmt.setNString(2, location.getRegion());
 			loc_insert_stmt.setNString(3, location.getCity());
 			loc_insert_stmt.setNString(4, location.getArea());
-			loc_insert_stmt.setNString(5, location.getSpace());
+			loc_insert_stmt.setInt(5, location.getFloor());
+			loc_insert_stmt.setNString(6, location.getSpace());
 
+			log.debug("bind location floor "+location.getFloor());
+			
 			loc_insert_stmt.executeUpdate();
 
 			ResultSet locInsertRes = loc_insert_stmt.getGeneratedKeys();
@@ -407,6 +419,8 @@ public class DB {
 
 			location_id = locInsertRes.getInt(1);
 			locInsertRes.close();
+			log.debug("getLocationId inserted id "+
+				  location_id + " "+shortName);
 		}
 
 		loc_res.close();
@@ -625,41 +639,43 @@ public class DB {
 			log.debug("creating prepared statement");
 			
 			bssid_to_loc_query_stmt = connection.prepareStatement
-				("select country, region, city, area from location_ap_stat, locations where bssid=? "+
-				 "and location_ap_stat.location_id=locations.id and location_ap_stat.is_active=1");
+				("select country, region, city, area, floor from location_ap_stat, locations where bssid=? "+
+				 "and location_ap_stat.location_id=locations.id and location_ap_stat.is_active=1 and locations.is_active=1");
 
 		}
 
 		bssid_to_loc_query_stmt.setNString(1, bssid);
 
-		log.debug("executing prepared statement");
+		log.debug("fillAreaCache executing prepared statement "+bssid);
 
 		ResultSet loc_id_res = bssid_to_loc_query_stmt.executeQuery();
 		synchronized (last_db_ping) {
 			last_db_ping= new Date ();
 		}
-		
-		log.debug("executed prepared statement");
+
+		log.debug("fillAreaCache executed prepared statement "+bssid);		
 
 		List<String> fq_areas = new ArrayList<String> ();
 		
 		int campus_area_count = 0;
 		while (loc_id_res.next()) {
-			log.debug("loop through results "+campus_area_count);
+			log.debug("loop through results "+campus_area_count +
+				  " bssid " +bssid);
 
 			String country  = loc_id_res.getString (1);
 			String region  = loc_id_res.getString (2);
 			String city = loc_id_res.getString (3);
 			String area = loc_id_res.getString (4);
+			int floor = loc_id_res.getInt(5);
 										
-			String fq_area = new String (country+"/"+region+"/"+city+"/"+area);
+			String fq_area = new String (country+"/"+region+"/"+city+"/"+area+"/"+floor);
 			if (country.length() > 0 && region.length() > 0 && city.length() > 0 && area.length() > 0) {
 				fq_areas.add(fq_area);
 				
-				log.debug("added area "+fq_area);
+				log.debug("added area "+fq_area+ " bssid "+bssid);
 				
 			} else {
-				log.warn("received invalid area from db="+fq_area);
+				log.warn("received invalid area from db="+fq_area+ " bssid "+bssid);
 			}
 
 			campus_area_count++;
@@ -681,7 +697,7 @@ public class DB {
 
 	}
 
-	public void findArea(String bssid, List<String> areas) throws Exception {
+	public void findArea(String bssid, Set<String> areas) throws Exception {
 
 		log.debug("bssid="+bssid);
 

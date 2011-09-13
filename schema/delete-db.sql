@@ -16,29 +16,15 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # 
 
-DROP TRIGGER IF EXISTS ap_readings_insert_trigger;
+delete from location_ap_stat;
+delete from ap_readings;
+delete from binds;
+delete from locations;
 
-delimiter //
+drop table location_ap_stat;
+drop table ap_readings;
+drop table binds;
+drop table locations;
 
 
-CREATE TRIGGER ap_readings_insert_trigger BEFORE INSERT ON ap_readings
-FOR EACH ROW
-BEGIN
-  DECLARE _start_stamp TIMESTAMP;
-  DECLARE _end_stamp TIMESTAMP;
-  SELECT start_stamp,end_stamp into _start_stamp, _end_stamp
-  FROM binds
-  WHERE new.bind_id = binds.id;
 
-  IF NEW.stamp > _end_stamp THEN
-    insert into log values ('ap trigger A');
-    SET NEW.location_id = NULL;
-  END IF;
-
-  IF NEW.stamp < _start_stamp THEN
-    insert into log values ('ap trigger B');
-    SET NEW.location_id = NULL;
-  END IF;
-
-END;
-//

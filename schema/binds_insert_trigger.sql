@@ -24,35 +24,39 @@ DROP TRIGGER IF EXISTS binds_insert_trigger;
 
 DROP TRIGGER IF EXISTS binds_update_trigger;
 
-delimiter //
+#delimiter //
 
 
 CREATE TRIGGER binds_insert_trigger BEFORE INSERT ON binds
 FOR EACH ROW
 BEGIN
-  -- insert into log values ('start binds_insert_trigger');
-  IF TIMESTAMPDIFF(minute,NEW.start_stamp, NEW.bind_stamp) > 30 THEN
-    -- insert into log values ('A');
+  -- These long time lags can happen because legitimate (different) scans 
+  -- can happen slower than we are scanning because they are duplicates.
+  -- If scanQueue's max is 60, timestampdiff can be more than 60.
+  -- Hopefully 120 is a safe value.
+  -- Otherwise old scans could be tossed by the client.
+  IF TIMESTAMPDIFF(minute,NEW.start_stamp, NEW.bind_stamp) > 120 THEN
+    insert into log values ('start binds_insert_trigger A');
     SET NEW.location_id = NULL;
   END IF;
-  IF TIMESTAMPDIFF(minute,NEW.end_stamp, NEW.bind_stamp) > 30 THEN
-    -- insert into log values ('B');
+  IF TIMESTAMPDIFF(minute,NEW.end_stamp, NEW.bind_stamp) > 120 THEN
+    insert into log values ('start binds_insert_trigger B');
     SET NEW.location_id = NULL;
   END IF;
   IF NEW.end_stamp < NEW.start_stamp THEN
-    -- insert into log values ('C');
+    insert into log values ('start binds_insert_trigger C');
     SET NEW.location_id = NULL;
   END IF;
   IF NEW.start_stamp < date_sub(now(), interval 1 day) THEN
-    -- insert into log values ('D');
+    insert into log values ('start binds_insert_trigger D');
     SET NEW.location_id = NULL;
   END IF;
   IF NEW.end_stamp > date_add(now(), interval 1 day) THEN
-    -- insert into log values ('E');
+    insert into log values ('start binds_insert_trigger E');
     SET NEW.location_id = NULL;
   END IF;
   IF TIMESTAMPDIFF(minute,NEW.end_stamp,NEW.start_stamp) > 120 THEN
-    -- insert into log values ('F');
+    insert into log values ('start binds_insert_trigger F');
     SET NEW.location_id = NULL;
   END IF;
 END;
@@ -70,12 +74,15 @@ CREATE TRIGGER binds_update_trigger BEFORE UPDATE ON binds
 FOR EACH ROW
 BEGIN
   IF TIMESTAMPDIFF(minute,NEW.start_stamp, NEW.bind_stamp) > 30 THEN
+    insert into log values ('binds_update_trigger A');
     SET NEW.location_id = NULL;
   END IF;
   IF TIMESTAMPDIFF(minute,NEW.end_stamp, NEW.bind_stamp) > 30 THEN
+    insert into log values ('binds_update_trigger B');
     SET NEW.location_id = NULL;
   END IF;
   IF NEW.end_stamp < NEW.start_stamp THEN
+    insert into log values ('binds_update_trigger C');
     SET NEW.location_id = NULL;
   END IF;
 -- Cannot have these because builder might work on old binds
@@ -86,6 +93,7 @@ BEGIN
 --    SET NEW.location_id = NULL;
 --  END IF;
   IF TIMESTAMPDIFF(minute,NEW.end_stamp,NEW.start_stamp) > 120 THEN
+    insert into log values ('binds_update_trigger D');
     SET NEW.location_id = NULL;
   END IF;
 END;

@@ -40,6 +40,7 @@ use Sys::Hostname;
 
 use Getopt::Std;
 use Config::Tiny;
+use File::Path qw(make_path remove_tree);
 
 ######################################################################
 # Constants, global parameters
@@ -154,7 +155,7 @@ sub init {
 	    mkdir "$OUT_DIR" or $log->fatal ("Cannot mkdir $OUT_DIR");
 	}
     }
-        
+    
 
     # connect to db
     $log->info ("Connecting to database ".$dsn);
@@ -180,7 +181,7 @@ sub fill_space_desc {
     my ($self, $location_id, $desc) = @_;
 
     $self->{get_location_desc_stmt} = $self->{dbi}->prepare_cached
-	("SELECT country,region,city,area,name from locations where id=?");
+	("SELECT country,region,city,area,floor,name from locations where id=?");
     $self->{get_location_desc_stmt}->execute ($location_id);
 
     $desc->{fq_space_name} = 'unknown';
@@ -190,14 +191,15 @@ sub fill_space_desc {
     } else {
 	my @location = $self->{get_location_desc_stmt}->fetchrow_array();
 
-	my $fq_area = $location[0].'/'.$location[1].'/'.$location[2].'/'.$location[3];
-	my $fq_space_name = '['.$fq_area.'/'.$location[4].']';
+	my $fq_area = $location[0].'/'.$location[1].'/'.$location[2].'/'.$location[3].'/'.$location[4];
+	my $fq_space_name = '['.$fq_area.'/'.$location[5].']';
 
 	$desc->{country} = $location[0];
 	$desc->{region} = $location[1];
 	$desc->{city} = $location[2];
 	$desc->{area} = $location[3];
-	$desc->{name} = $location[4];
+	$desc->{floor} = $location[4];
+	$desc->{name} = $location[5];
 	#$desc->{version} = $location[5];
 
 	$desc->{fq_space_name} = $fq_space_name;
@@ -210,15 +212,40 @@ sub fill_space_desc {
 
 ######################################################################
 
+sub remove_space {
+    my ($self, $location_id) = @_;
+
+    $log->debug ("remove_space $location_id");
+    
+    $self->{locations_remove_space_stmt} = $self->{dbi}->prepare_cached
+	("update locations set is_active=0, is_changed=1 where id=?");
+    $self->{locations_remove_space_stmt}->execute ($location_id);
+    $self->{locations_remove_space_stmt}->finish ();
+
+    $self->{location_ap_stat_remove_space_stmt} = $self->{dbi}->prepare_cached
+	("update location_ap_stat set is_active=0 where location_id=?");
+    $self->{location_ap_stat_remove_space_stmt}->execute ($location_id);
+    $self->{location_ap_stat_remove_space_stmt}->finish ();
+
+}
+
+######################################################################
+
 sub process_bind {
     my ($self, $bind_id, $location_id, $space_desc) = @_;
 
     $log->debug ("START processing bind space ".$space_desc->{fq_space_name}." id $location_id");
+    
+    # activate this space if it isn't already
+    $self->{locations_activate_space_stmt} = $self->{dbi}->prepare_cached
+	("update locations set is_active=1, is_changed=1 where id=?");
+    $self->{locations_activate_space_stmt}->execute ($location_id);
+    $self->{locations_activate_space_stmt}->finish ();
 
     # Isolate recent binds covering last T minutes.
     # Ignore all really old binds regardless (unless we are doing a reset)
     my $get_recent_binds_sql = "SELECT id, cookie, timestampdiff(minute,start_stamp,end_stamp) as duration, end_stamp from binds ".
-	 "where location_id=?";
+	"where location_id=? and source != 'remove'";
     if (!$reset) {
 	$get_recent_binds_sql .= " and bind_stamp >= date_sub(now(),interval 1 month) ";
     }
@@ -269,6 +296,7 @@ sub process_bind {
 	("SELECT bssid, count(level) as count, avg(level) as avg, ".
 	 "stddev(level) as stddev, min(level) as min, max(level) as max ".
 	 "from ap_readings where location_id=? ".
+	 "and level>=20 and level<100 ".
 	 "and stamp >= date_sub(?, interval 600 second) ".
 	 "group by bssid order by max asc, count desc limit $MAX_APS_PER_FP");
 
@@ -330,6 +358,7 @@ sub process_bind {
 	$self->{get_histogram_stmt} = $self->{dbi}->prepare_cached
 	    ("SELECT bssid, count(level) as count, level ".
 	     "from ap_readings where location_id=? ".
+	     "and level>=20 and level<100 ".
 	     "and stamp >= date_sub(?, interval 600 second) ".
 	     "group by bssid,level order by level asc");
 
@@ -453,18 +482,20 @@ sub process_area {
 
     $self->{get_space_ap_stat_join_stmt} = $self->{dbi}->prepare_cached
 	("SELECT name, bssid, avg, stddev, weight, histogram from location_ap_stat, locations ".
-	 "where country=? and region=? and city=? and area=? and ".
+	 "where country=? and region=? and city=? and area=? and floor=? and locations.is_active=1 and ".
 	 "locations.id = location_ap_stat.location_id ".
 	 "and location_ap_stat.is_active=1 ".
 	 "order by name, weight");
     $self->{get_space_ap_stat_join_stmt}->execute 
 	($area_desc->{country}, $area_desc->{region},
-	$area_desc->{city}, $area_desc->{area});
+	 $area_desc->{city}, $area_desc->{area}, $area_desc->{floor});
 
 
+    my $space_count = $self->{get_space_ap_stat_join_stmt}->rows;
+    $log->debug ("Space count ".$space_count);
     my %spaces = ();
-    if ($self->{get_space_ap_stat_join_stmt}->rows == 0) {
-	$log->warn ("Cannot process area with no spaces ".$area_desc->{fq_area});
+    if ($space_count == 0) {
+	$log->debug ("Removing area with no spaces ".$area_desc->{fq_area});
     } else {
 
 	my $sub_fps = $self->{get_space_ap_stat_join_stmt}->fetchall_arrayref(
@@ -555,39 +586,54 @@ sub process_area {
     $space_fps{region} = $area_desc->{region};
     $space_fps{city} = $area_desc->{city};
     $space_fps{area} = $area_desc->{area};
+    $space_fps{floor} = $area_desc->{floor};
     $space_fps{spaces} = \%spaces;
 
     my $outfile = $OUT_DIR.'/'.$area_desc->{country}.'/'.
 	$area_desc->{region}.
-	'/'.$area_desc->{city}.'/'.$area_desc->{area}.'/sig.xml';
+	'/'.$area_desc->{city}.'/'.$area_desc->{area}.'/'.$area_desc->{floor}.'/sig.xml';
 
+    # when space_count > 0
+    # we added, changed, or removed a space, but the floor still exists,
+    # else, no spaces exist on this floor any more.
 
     if (!$AWS) {
-    #if (1) {
-	&make_output_dir ($area_desc->{country}, $area_desc->{region},
-			  $area_desc->{city}, $area_desc->{area});
+	if ($space_count > 0) {
+	    &make_output_dir ($area_desc->{country}.'/'.$area_desc->{region}.'/'.
+			      $area_desc->{city}.'/'.$area_desc->{area}.'/'.$area_desc->{floor});
 
-	open XML_OUT, ">$outfile" or die ("Cannot open $outfile for writing");
-	print XML_OUT XMLout(\%space_fps, RootName => "area");
-	close XML_OUT;
+	    open XML_OUT, ">$outfile" or die ("Cannot open $outfile for writing");
+	    print XML_OUT XMLout(\%space_fps, RootName => "area");
+	    close XML_OUT;
+	} else {
+	    if (-e $outfile) {
+		unlink $outfile;
+	    }
+	}
     } else {
 
-	my $xml = XMLout(\%space_fps, RootName => "area");
-	my %headers = (
-	    'Content-Type' => 'text/xml',
-	    'x-amz-acl' => 'public-read'
-	    );
-	# outfile == key
-	my $response = $aws_connection->put
-	    ( $bucket, $outfile, S3::S3Object->new($xml),
-	      \%headers);
+	my $response;
+	if ($space_count > 0) {
+	    my $xml = XMLout(\%space_fps, RootName => "area");
+	    my %headers = (
+		'Content-Type' => 'text/xml',
+		'x-amz-acl' => 'public-read'
+		);
+	    # outfile == key
+	    $response = $aws_connection->put
+		( $bucket, $outfile, S3::S3Object->new($xml),
+		  \%headers);
+	} else {
+	    $response = $aws_connection->delete ($bucket, $outfile);
+	}
+
 
 	if ($response->http_response->code == 200) {
-	    $log->debug ("Stored xml in S3: $outfile");
+	    $log->debug ("Stored/removed xml in S3: $outfile");
 	} else {
-	    $log->fatal ("Failed to store xml in S3: $outfile $@ ".
-		$response->http_response->code. " ".
-		$response->http_response->message);
+	    $log->fatal ("Failed to store/remove xml in S3: $outfile $@ ".
+			 $response->http_response->code. " ".
+			 $response->http_response->message);
 	}
 
     }
@@ -601,7 +647,7 @@ sub process_area {
 sub handle_new_binds {
     my ($self) = @_;
     
-    my $get_new_binds_sql = "SELECT id, location_id from binds";
+    my $get_new_binds_sql = "SELECT id, location_id, source from binds";
 
     if (!$reset) {
 	$get_new_binds_sql .= " where is_new=1";
@@ -620,18 +666,23 @@ sub handle_new_binds {
 
 	my @new_bind_ids = ();
 	my $new_binds = $self->{get_new_binds_stmt}->fetchall_arrayref(
-	    { id => 1, location_id => 1 } );
+	    { id => 1, location_id => 1, source => 1 } );
 	
 	for (my $b = 0; $b <= $#$new_binds; $b++) {
 	    my $new_bind = $new_binds->[$b];
-	    $log->debug ("new bind ".$new_bind->{id}." loc ".$new_bind->{location_id});
+	    $log->debug ("new bind ".$new_bind->{id}." loc ".$new_bind->{location_id}
+		." source ".$new_bind->{source});
 	    push (@new_bind_ids, $new_bind->{id});
 
 	    my %space_desc = ();
 	    &fill_space_desc ($self, $new_bind->{location_id}, \%space_desc);
 
 	    # process this bind
-	    &process_bind ($self, $new_bind->{id}, $new_bind->{location_id}, \%space_desc);
+	    if ($new_bind->{source} eq "remove") {
+		&remove_space ($self, $new_bind->{location_id});
+	    } else {
+		&process_bind ($self, $new_bind->{id}, $new_bind->{location_id}, \%space_desc);
+	    }
 
 	    $dirty_areas{$space_desc{fq_area}} = \%space_desc;
 
@@ -642,8 +693,8 @@ sub handle_new_binds {
  	foreach my $new_bind_id (@new_bind_ids) {
 	    $log->debug ("new_bind_id $new_bind_id");
 	    $self->{set_new_bind_id_false_stmt} = $self->{dbi}->prepare_cached
-		("UPDATE binds set is_new=? WHERE id=?");
-	    $self->{set_new_bind_id_false_stmt}->execute (0, $new_bind_id);
+		("UPDATE binds set is_new=0 WHERE id=?");
+	    $self->{set_new_bind_id_false_stmt}->execute ($new_bind_id);
 	    $self->{set_new_bind_id_false_stmt}->finish ();
 
  	}
@@ -669,56 +720,76 @@ sub handle_new_binds {
 
 ######################################################################
 sub make_output_dir {
-    my ($country, $region, $city, $area) = @_;
+    my ($relpath) = @_;
 
-    $log->debug ("make_output_dir");
+    $log->debug ("make_output_dir $relpath");
 
     if ($AWS) { return; }
 
-    if (defined($country)) {
-	my $country_dir = $OUT_DIR.'/'.$country;
-	if (! -d $country_dir) {
-	    mkdir "$country_dir" or $log->fatal ("Cannot mkdir $country_dir");
-	}
-	$log->debug ("make_output_dir $country_dir");
-
-	if (defined($region)) {
-	    my $region_dir = $OUT_DIR.'/'.$country.'/'.$region;
-	    if (! -d $region_dir) {
-		mkdir "$region_dir" or $log->fatal ("Cannot mkdir $region_dir");
-	    }
-	    $log->debug ("make_output_dir $region_dir");
-
-	    if (defined($city)) {
-		my $city_dir = $OUT_DIR.'/'.$country.'/'.$region.'/'.$city;
-		if (! -d $city_dir) {
-		    mkdir "$city_dir" or $log->fatal ("Cannot mkdir $city_dir");
-		}
-		$log->debug ("make_output_dir $city_dir");
-
-		if (defined($area)) {
-		    my $area_dir = $OUT_DIR.'/'.$country.'/'.$region.
-			'/'.$city.'/'.$area;
-
-		    if (! -d $area_dir) {
-			mkdir "$area_dir" or $log->fatal ("Cannot mkdir $area_dir");
-		    }
-		    $log->debug ("make_output_dir $area_dir");
-
-		}
-	    }
-	}
-    }
-
+    my $abspath = $OUT_DIR.'/'.$relpath;
+    make_path ($abspath);
 }
 
 ######################################################################
-# Looks a shadow of fq_place's index.txt (list of places).
-# If it is different, update it, make it live
-# and return 1.
+sub rm_output_files {
+    my ($relpath) = @_;
 
-sub append_new_places {
+    $log->debug ("rm_output_files $relpath");
+    my $abspath = $OUT_DIR.'/'.$relpath;
+
+    foreach my $file ('places.txt', 'sig.xml') {
+	my $absfile = $abspath.'/'.$file;
+
+	if ($AWS) {
+	    my $response = $aws_connection->delete($bucket, $absfile);
+	    if ($response->http_response->code == 200) {
+		$log->debug ("rm_output_dir deleted $absfile");
+	    } else {
+		$log->debug ("rm_output_dir could not delete $absfile");
+	    }
+	} else {
+	    if (-e $absfile) {
+		unlink ($absfile);
+		$log->debug ("rm_output_file deleted $absfile");
+	    } else {
+		$log->debug ("rm_output_file could not delete $absfile");
+	    }
+	}
+    }
+}
+
+sub rm_output_dir {
+    my ($relpath) = @_;
+
+    $log->debug ("rm_output_dir $relpath");
+
+    my $abspath = $OUT_DIR.'/'.$relpath;
+    if ($AWS) {
+	&rm_output_files ($relpath);
+    } else {
+	remove_tree ($abspath);
+    }
+}
+
+######################################################################
+sub compare_arrays {
+	my ($first, $second) = @_;
+	# no warnings;  # silence spurious -w undef complaints
+	return 0 unless @$first == @$second;
+	for (my $i = 0; $i < @$first; $i++) {
+	    return 0 if $first->[$i] ne $second->[$i];
+	}
+	return 1;
+    }  
+######################################################################
+# Looks at places.txt (list of places).
+# If it is different, update it, make it live.
+# If we are making a new places.txt, return 1.
+
+sub append_existing_places {
     my ($self, $fq_place, $places) = @_;
+
+    $log->debug ("append_existing_places fq_place $fq_place");
 
     my $outfile = $OUT_DIR.'/'.$fq_place.'/places.txt';
     if ($fq_place eq '') {
@@ -726,265 +797,391 @@ sub append_new_places {
     }
 
     my $place_str = '';
+    my @place_list = ();
     foreach my $place (sort keys %$places) {
-	#$log->debug ("file $file place $place");
+	$log->debug ("existing places file $outfile place $place");
 	$place_str .= "$place\n";
+	push (@place_list, $place);
     }
 
-    #if (0) {
+    my $create = 0;
+    my $replace = 0;
     if ($AWS) {
 
-	my %headers = (
-	    'Content-Type' => 'text/plain',
-	    'x-amz-acl' => 'public-read'
-	    );
-	# outfile == key
-	my $response = $aws_connection->put
-	    ( $bucket, $outfile, S3::S3Object->new($place_str),
-	      \%headers);
+	my $response = $aws_connection->get($bucket, $outfile);
 	if ($response->http_response->code == 200) {
-	    $log->debug ("Stored place in S3: $outfile");
+	    # exists
+	    my $place_data = $response->object->data;
+	    my (@existing_place_list) = split (/\n/,$place_data);
+	    if (! &compare_arrays (\@existing_place_list, \@place_list)) {
+		$replace = 1;
+	    }
+
+	    $log->debug ("compared old and existing keys fq_place $outfile");
 	} else {
-	    $log->fatal ("Failed to store place in S3: $outfile $@ ".
-		$response->http_response->code. " ".
-		$response->http_response->message);
+	    $create = 1;
+	    $log->debug ("old key did not exist fq_place $outfile");
+	}
+
+	if ($create || $replace) {
+	    my %headers = (
+		'Content-Type' => 'text/plain',
+		'x-amz-acl' => 'public-read'
+		);
+	    # outfile == key
+	    $response = $aws_connection->put
+		( $bucket, $outfile, S3::S3Object->new($place_str),
+		  \%headers);
+	    if ($response->http_response->code == 200) {
+		$log->debug ("Stored place in S3: $outfile");
+	    } else {
+		$log->fatal ("Failed to store place in S3: $outfile $@ ".
+			     $response->http_response->code. " ".
+			     $response->http_response->message);
+	    }
+	} else {
+	    $log->debug ("append_existing_places file unchanged $outfile");
 	}
 
     } else {
 
-	#open OUT, "wt", $outfile 
+	if (-e $outfile) {
+	    $log->debug ("append_existing_places exists $outfile");
+	    open PLACES, "$outfile" or die ("Cannot open $outfile when it exists");
 
-	open OUT, ">$outfile" or die ("Cannot open $outfile");
-	print OUT "$place_str";
-	close OUT;
+	    my @existing_place_list = ();
+	    while (my $line = <PLACES>) {
+		chop $line;
+		push (@existing_place_list, $line);
+	    }
+	    close PLACES;
+	    if (! &compare_arrays (\@existing_place_list, \@place_list)) {
+		$replace = 1;
+	    }
 
-	$log->debug ("append_new_places $outfile place_str $place_str");
+	} else {
+	    $log->debug ("append_existing_places no file exists $outfile");
+	    $create = 1;
+	}
+
+	if ($create || $replace) {
+	    open OUT, ">$outfile" or die ("Cannot open $outfile");
+	    print OUT "$place_str";
+	    close OUT;
+	    $log->debug ("append_existing_places wrote file $outfile");
+	} else {
+	    $log->debug ("append_existing_places file unchanged $outfile");
+	}
 
     }
+
+    if ($create) {
+	$log->debug ("append_existing_places created $outfile place_str $place_str");
+	return 1;
+    } else { 
+	$log->debug ("append_existing_places did not create $outfile place_str $place_str");
+	return 0;
+    }
+
+
 }
 
 ######################################################################
 # Grab all space names from this area,
-# send list to append_new_places, which returns 1
+# send list to append_existing_places, which returns 1
 # if a modification was made.
 #
-# handle_new_places_X are all similar.
+# handle_changed_places_X are all similar.
 
-sub handle_new_places_space {
-    my ($self, $fq_place, $country, $region, $city, $area) = @_;
+sub handle_changed_places_space {
+    my ($self, $fq_place, $country, $region, $city, $area, $floor) = @_;
 
-    $log->debug ("handle_new_places_space fq_place $fq_place cnt $country reg $region city $city area $area");
+    $log->debug ("handle_changed_places_space fq_place $fq_place cnt $country reg $region city $city area $area floor $floor");
 
     # must be unique (via db constraint)
-    $self->{get_new_space_names_stmt} = $self->{dbi}->prepare_cached
-	("SELECT name from locations where country=? and region=? and city=? and area=?");
+    $self->{get_existing_space_names_stmt} = $self->{dbi}->prepare_cached
+	("SELECT name from locations where country=? and region=? and city=? and area=? and floor=? and is_active=1");
 
-    $self->{get_new_space_names_stmt}->execute($country,$region,$city,$area);
+    $self->{get_existing_space_names_stmt}->execute($country,$region,$city,$area,$floor);
 
-    my $new_places = $self->{get_new_space_names_stmt}->fetchall_arrayref( { name => 1} );
+    my $existing_places = $self->{get_existing_space_names_stmt}->fetchall_arrayref( { name => 1} );
 
     my %places = ();
-    for (my $p = 0; $p <= $#$new_places; $p++) {
-	$places{$new_places->[$p]->{name}} = 1;
+
+    for (my $p = 0; $p <= $#$existing_places; $p++) {
+	$places{$existing_places->[$p]->{name}} = 1;
     }
-    $self->{get_new_space_names_stmt}->finish();
+    $self->{get_existing_space_names_stmt}->finish();
 
-    &make_output_dir ($country, $region, $city, $area);
-    return &append_new_places ($self, $fq_place, \%places);
-
+    #&make_output_dir ($country, $region, $city, $area, $floor);
+    $log->debug ("existing place count ".$#$existing_places);
+    if ($#$existing_places >= 0) {
+	&make_output_dir ($fq_place);
+	# seems like we should only propagate change up if creation -- not if exists
+	return &append_existing_places ($self, $fq_place, \%places);
+    } else {
+	&rm_output_dir ($fq_place);
+	return 1;
+    }
 }
 
-sub handle_new_places_area {
+sub handle_changed_places_floor {
+    my ($self, $fq_place, $country, $region, $city, $area) = @_;
+
+    $log->debug ("handle_changed_places_floor fq_place $fq_place cnt $country reg $region city $city area $area");
+
+    $self->{get_existing_floors_stmt} = $self->{dbi}->prepare_cached
+	("SELECT floor from locations where country=? and region=? and city=? and area=? and is_active=1 group by floor");
+
+    $self->{get_existing_floors_stmt}->execute($country,$region,$city,$area);
+
+    my $existing_places = $self->{get_existing_floors_stmt}->fetchall_arrayref( { floor => 1} );
+
+    my %places = ();
+    for (my $p = 0; $p <= $#$existing_places; $p++) {
+	$places{$existing_places->[$p]->{floor}} = 1;
+    }
+    $self->{get_existing_floors_stmt}->finish();
+
+    $log->debug ("existing place count ".$#$existing_places);
+    if ($#$existing_places >= 0) {
+	&make_output_dir ($country.'/'.$region.'/'.$city.'/'.$area);
+	return &append_existing_places ($self, $fq_place, \%places);
+    } else {
+	&rm_output_dir ($fq_place);
+	return 1;
+    }
+}
+
+sub handle_changed_places_area {
     my ($self, $fq_place, $country, $region, $city) = @_;
 
-    $self->{get_new_areas_stmt} = $self->{dbi}->prepare_cached
-	("SELECT area from locations where country=? and region=? and city=? group by area");
+    $log->debug ("handle_changed_places_area fq_place $fq_place cnt $country reg $region city $city");
 
-    $self->{get_new_areas_stmt}->execute($country,$region,$city);
+    $self->{get_existing_areas_stmt} = $self->{dbi}->prepare_cached
+	("SELECT area from locations where country=? and region=? and city=? and is_active=1 group by area");
 
-    my $new_places = $self->{get_new_areas_stmt}->fetchall_arrayref( { area => 1} );
+    $self->{get_existing_areas_stmt}->execute($country,$region,$city);
+
+    my $existing_places = $self->{get_existing_areas_stmt}->fetchall_arrayref( { area => 1} );
 
     my %places = ();
-    for (my $p = 0; $p <= $#$new_places; $p++) {
-	$places{$new_places->[$p]->{area}} = 1;
+    for (my $p = 0; $p <= $#$existing_places; $p++) {
+	$places{$existing_places->[$p]->{area}} = 1;
     }
-    $self->{get_new_areas_stmt}->finish();
+    $self->{get_existing_areas_stmt}->finish();
 
-    &make_output_dir ($country, $region, $city);
-    return &append_new_places ($self, $fq_place, \%places);
-
+    $log->debug ("existing place count ".$#$existing_places);
+    if ($#$existing_places >= 0) {
+	&make_output_dir ($country.'/'.$region.'/'.$city);
+	return &append_existing_places ($self, $fq_place, \%places);
+    } else {
+	&rm_output_dir ($fq_place);
+	return 1;
+    }
 }
 
-sub handle_new_places_city {
+sub handle_changed_places_city {
     my ($self, $fq_place, $country, $region) = @_;
 
-    $self->{get_new_cities_stmt} = $self->{dbi}->prepare_cached
-	("SELECT city from locations where country=? and region=? group by city");
+    $log->debug ("handle_changed_places_city fq_place $fq_place cnt $country reg $region");
 
-    $self->{get_new_cities_stmt}->execute($country,$region);
+    $self->{get_existing_cities_stmt} = $self->{dbi}->prepare_cached
+	("SELECT city from locations where country=? and region=? and is_active=1 group by city");
 
-    my $new_places = $self->{get_new_cities_stmt}->fetchall_arrayref( { city => 1} );
+    $self->{get_existing_cities_stmt}->execute($country,$region);
+
+    my $existing_places = $self->{get_existing_cities_stmt}->fetchall_arrayref( { city => 1} );
 
     my %places = ();
-    for (my $p = 0; $p <= $#$new_places; $p++) {
-	$places{$new_places->[$p]->{city}} = 1;
+    for (my $p = 0; $p <= $#$existing_places; $p++) {
+	$places{$existing_places->[$p]->{city}} = 1;
     }
-    $self->{get_new_cities_stmt}->finish();
+    $self->{get_existing_cities_stmt}->finish();
 
-    &make_output_dir ($country, $region);
-    return &append_new_places ($self, $fq_place, \%places);
+    $log->debug ("existing place count ".$#$existing_places);
+    if ($#$existing_places >= 0) {
+	&make_output_dir ($country.'/'.$region);
+	return &append_existing_places ($self, $fq_place, \%places);
+    } else {
+	&rm_output_dir ($fq_place);
+	return 1;
+    }
 
 }
 
-sub handle_new_places_region {
+sub handle_changed_places_region {
     my ($self, $fq_place, $country) = @_;
 
-    $self->{get_new_regions_stmt} = $self->{dbi}->prepare_cached
-	("SELECT region from locations where country=? group by region");
+    $log->debug ("handle_changed_places_region fq_place $fq_place cnt $country");
 
-    $self->{get_new_regions_stmt}->execute($country);
+    $self->{get_existing_regions_stmt} = $self->{dbi}->prepare_cached
+	("SELECT region from locations where country=? and is_active=1 group by region");
 
-    my $new_places = $self->{get_new_regions_stmt}->fetchall_arrayref( { region => 1} );
+    $self->{get_existing_regions_stmt}->execute($country);
+
+    my $existing_places = $self->{get_existing_regions_stmt}->fetchall_arrayref( { region => 1} );
 
     my %places = ();
-    for (my $p = 0; $p <= $#$new_places; $p++) {
-	$places{$new_places->[$p]->{region}} = 1;
+    for (my $p = 0; $p <= $#$existing_places; $p++) {
+	$places{$existing_places->[$p]->{region}} = 1;
     }
-    $self->{get_new_regions_stmt}->finish();
+    $self->{get_existing_regions_stmt}->finish();
 
-    &make_output_dir ($country);
-    return &append_new_places ($self, $fq_place, \%places);
+    $log->debug ("existing place count ".$#$existing_places);
+    if ($#$existing_places >= 0) {
+	&make_output_dir ($country);
+	return &append_existing_places ($self, $fq_place, \%places);
+    } else {
+	&rm_output_dir ($fq_place);
+	return 1;
+    }
+
 
 }
 
-sub handle_new_places_country {
+sub handle_changed_places_country {
     my ($self, $fq_place) = @_;
 
-    $self->{get_new_country_stmt} = $self->{dbi}->prepare_cached
-	("SELECT country from locations group by country");
+    $log->debug ("handle_changed_places_country fq_place $fq_place");
 
-    $self->{get_new_country_stmt}->execute();
+    $self->{get_existing_country_stmt} = $self->{dbi}->prepare_cached
+	("SELECT country from locations where is_active=1 group by country");
 
-    my $new_places = $self->{get_new_country_stmt}->fetchall_arrayref( { country => 1} );
+    $self->{get_existing_country_stmt}->execute();
+
+    my $existing_places = $self->{get_existing_country_stmt}->fetchall_arrayref( { country => 1} );
 
     my %places = ();
-    for (my $p = 0; $p <= $#$new_places; $p++) {
-	$places{$new_places->[$p]->{country}} = 1;
+    for (my $p = 0; $p <= $#$existing_places; $p++) {
+	$places{$existing_places->[$p]->{country}} = 1;
     }
-    $self->{get_new_country_stmt}->finish();
+    $self->{get_existing_country_stmt}->finish();
 
-    return &append_new_places ($self, $fq_place, \%places);
-
+    $log->debug ("existing place count ".$#$existing_places);
+    if ($#$existing_places >= 0) {    
+	return &append_existing_places ($self, $fq_place, \%places);
+    } else {
+	&rm_output_files ($fq_place);
+	return 1;
+    }
 }
 
 
 
 ######################################################################
 
-sub handle_new_places {
+sub handle_changed_places {
     my ($self) = @_;
 
-    my $get_new_places_sql = "SELECT id, country, region, city, area, name from locations";
+    my $get_changed_places_sql = "SELECT id, country, region, city, area, floor, name from locations";
     if (!$reset) {
-	$get_new_places_sql .= " where is_new=1";
+	$get_changed_places_sql .= " where is_changed=1";
     }
 
-    $self->{get_new_places_stmt} = $self->{dbi}->prepare_cached
-	($get_new_places_sql);
+    $self->{get_changed_places_stmt} = $self->{dbi}->prepare_cached
+	($get_changed_places_sql);
 
-    $self->{get_new_places_stmt}->execute();
+    $self->{get_changed_places_stmt}->execute();
 
-
-
-    # are there any new places since last time
-    if ($self->{get_new_places_stmt}->rows > 0) {
+    # are there any changed places since last time
+    my @changed_place_ids = ();
+    if ($self->{get_changed_places_stmt}->rows > 0) {
 
 	my %places = ();
-	my @new_place_ids = ();
 
-	my $new_places = $self->{get_new_places_stmt}->fetchall_arrayref(
+	my $changed_places = $self->{get_changed_places_stmt}->fetchall_arrayref(
 	    { id => 1, country => 1, region => 1, city => 1, 
-	      area => 1, name => 1 } );
+	      area => 1, floor => 1, name => 1 } );
 	
-	for (my $p = 0; $p <= $#$new_places; $p++) {
-	    my $new_place = $new_places->[$p];
-	    my $fq_name = $new_place->{country}.'/'.
-		$new_place->{region}.'/'.
-		$new_place->{city}.'/'.
-		$new_place->{area}.'/'.
-		$new_place->{name};
-		
+	for (my $p = 0; $p <= $#$changed_places; $p++) {
+	    my $changed_place = $changed_places->[$p];
+	    my $fq_name = $changed_place->{country}.'/'.
+		$changed_place->{region}.'/'.
+		$changed_place->{city}.'/'.
+		$changed_place->{area}.'/'.
+		$changed_place->{floor}.'/'.
+		$changed_place->{name};
+	    
 	    $log->debug 
-		("new place id=".$new_place->{id}." ".$fq_name);
+		("changed place id=".$changed_place->{id}." ".$fq_name);
 
-	    push (@new_place_ids, $new_place->{id});
+	    push (@changed_place_ids, $changed_place->{id});
 
 	    # Handle each branch of the place tree no more than once.
 	    # Start from the bottom up, so we can break out when no more differences exist.
 
-	    my $fq_area = $new_place->{country}.'/'.$new_place->{region}.'/'.
-		$new_place->{city}.'/'.$new_place->{area};
-	    my $fq_city = $new_place->{country}.'/'.$new_place->{region}.'/'.
-		$new_place->{city};
-	    my $fq_region = $new_place->{country}.'/'.$new_place->{region};
-	    my $fq_country = $new_place->{country};
+	    my $fq_floor = $changed_place->{country}.'/'.$changed_place->{region}.'/'.
+		$changed_place->{city}.'/'.$changed_place->{area}.'/'.$changed_place->{floor};
+	    my $fq_area = $changed_place->{country}.'/'.$changed_place->{region}.'/'.
+		$changed_place->{city}.'/'.$changed_place->{area};
+	    my $fq_city = $changed_place->{country}.'/'.$changed_place->{region}.'/'.
+		$changed_place->{city};
+	    my $fq_region = $changed_place->{country}.'/'.$changed_place->{region};
+	    my $fq_country = $changed_place->{country};
 	    my $fq_root = '';
 
 	    # Remember each fq_space, so we only process it once (this time around)
 
 	    # Each handle_X returns 1 if we need to continue up the tree.
-	    if (!defined ($places{$fq_area}) &&
-		&handle_new_places_space 
-		($self, $fq_area, $new_place->{country}, $new_place->{region},
-		 $new_place->{city}, $new_place->{area})) {
+	    if (!defined ($places{$fq_floor}) &&
+		&handle_changed_places_space 
+		($self, $fq_floor, $changed_place->{country}, $changed_place->{region},
+		 $changed_place->{city}, $changed_place->{area}, $changed_place->{floor})) {
 
-		if (!defined ($places{$fq_city}) &&
-		    &handle_new_places_area 
-		    ($self, $fq_city, $new_place->{country}, $new_place->{region},
-		     $new_place->{city})) {
+		if (!defined ($places{$fq_area}) &&
+		    &handle_changed_places_floor 
+		    ($self, $fq_area, $changed_place->{country}, $changed_place->{region},
+		     $changed_place->{city}, $changed_place->{area})) {
 
-		    if (!defined ($places{$fq_region}) &&
-			&handle_new_places_city 
-			($self, $fq_region, $new_place->{country}, $new_place->{region})) {
+		    if (!defined ($places{$fq_city}) &&
+			&handle_changed_places_area 
+			($self, $fq_city, $changed_place->{country}, $changed_place->{region},
+			 $changed_place->{city})) {
 
-			if (!defined ($places{$fq_country}) &&
-			    &handle_new_places_region 
-			    ($self, $fq_country, $new_place->{country})) {
+			if (!defined ($places{$fq_region}) &&
+			    &handle_changed_places_city 
+			    ($self, $fq_region, $changed_place->{country}, $changed_place->{region})) {
 
-			    if (!defined ($places{$fq_root}) &&
-				&handle_new_places_country 
-				($self, $fq_root)) {
+			    if (!defined ($places{$fq_country}) &&
+				&handle_changed_places_region 
+				($self, $fq_country, $changed_place->{country})) {
+
+				if (!defined ($places{$fq_root}) &&
+				    &handle_changed_places_country 
+				    ($self, $fq_root)) {
+				    
+				}
+				$places{$fq_root} = 1;
 
 			    }
-			    $places{$fq_root} = 1;
+			    $places{$fq_country} = 1;
 
 			}
-			$places{$fq_country} = 1;
+			$places{$fq_region} = 1;
 
 		    }
-		    $places{$fq_region} = 1;
+		    $places{$fq_city} = 1;
 
 		}
-		$places{$fq_city} = 1;
-
+		$places{$fq_area} = 1;
 	    }
-	    $places{$fq_area} = 1;
-
+	    $places{$fq_floor} = 1;
 	}
-
-	# clear the dirty bit in the binds we have just handled
- 	foreach my $new_place_id (@new_place_ids) {
-	    $log->debug ("new_place_id $new_place_id");
-	    $self->{set_new_place_id_false_stmt} = $self->{dbi}->prepare_cached
-		("UPDATE locations set is_new=? WHERE id=?");
-	    $self->{set_new_place_id_false_stmt}->execute (0, $new_place_id);
-	    $self->{set_new_place_id_false_stmt}->finish ();
-
- 	}
 
     }
 
-    $self->{get_new_places_stmt}->finish();    
+    $self->{get_changed_places_stmt}->finish();    
+
+    # clear the dirty bit in the binds we have just handled
+    foreach my $changed_place_id (@changed_place_ids) {
+	$log->debug ("changed_place_id $changed_place_id");
+	$self->{set_changed_place_id_false_stmt} = $self->{dbi}->prepare_cached
+	    ("UPDATE locations set is_changed=0 WHERE id=?");
+	$self->{set_changed_place_id_false_stmt}->execute ($changed_place_id);
+	$self->{set_changed_place_id_false_stmt}->finish ();
+
+    }
 
     $self->{dbi}->commit;
 
@@ -1008,7 +1205,7 @@ sub run {
 
 	&handle_new_binds ($self);
 
-	&handle_new_places ($self);
+	&handle_changed_places ($self);
 
     };
     if ($@) {

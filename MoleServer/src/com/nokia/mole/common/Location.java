@@ -32,6 +32,8 @@ public class Location implements Comparable<Location>, Serializable {
 	private static final long serialVersionUID = 1L;
 	static Logger log = Logger.getLogger(ID.class);
 
+	private static final int INVALID_FLOOR = -987654;
+	private static final int max_location_component_length = 100;
 	public final String full_space_name; 
 	
 	transient private String country = null;
@@ -39,15 +41,14 @@ public class Location implements Comparable<Location>, Serializable {
 	transient private String city = null;
 	transient private String area = null;
 	transient private String space = null;
+	transient private int floor = INVALID_FLOOR;
 
 	transient private boolean valid = false;
 	
-	static final int max_location_component_length = 100;
-	
 	// part of deserializing from json
-	public void assign_components () {
+	private void assign_components () {
 		String _parts[] = full_space_name.split("/");
-		if (_parts.length != 5) {
+		if (_parts.length != 6) {
 			setValid(false);
 			return;
 		}
@@ -55,7 +56,15 @@ public class Location implements Comparable<Location>, Serializable {
 		region = _parts[1];
 		city = _parts[2];
 		area = _parts[3];
-		space = _parts[4];
+		try {
+			floor = Integer.parseInt(_parts[4]);
+		} catch (NumberFormatException ex) {
+			floor = 0;
+			setValid(false);
+		}
+		space = _parts[5];
+		
+		log.debug("assign components floor "+floor);
 		
 		// TODO more sanity checking
 		if (country.length() > max_location_component_length) {
@@ -138,6 +147,12 @@ public class Location implements Comparable<Location>, Serializable {
 		return space;
 	}
 
+	public int getFloor() {
+		if (floor == INVALID_FLOOR) assign_components ();
+		return floor;
+	}
+
+	
 	public boolean isValid() {
 		if (space == null) assign_components ();
 		return valid;

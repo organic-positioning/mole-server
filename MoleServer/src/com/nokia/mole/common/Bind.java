@@ -35,7 +35,7 @@ public class Bind implements Serializable {
 	static Logger log = Logger.getLogger(Bind.class);
 	static final long serialVersionUID = 0L;
 
-
+	public String source;
 	public int version;
 	public Cookie cookie;
 	public Cookie session;
@@ -48,8 +48,9 @@ public class Bind implements Serializable {
 	public String wifi_model;
 	public String client_ip;
 	public int client_port;
-        public String tags;
-        public String description;
+	public String tags;
+	public String description;
+	
 	
 	final public List<AP_Scan> ap_scans;
 	transient boolean valid = false;
@@ -75,6 +76,15 @@ public class Bind implements Serializable {
 		final long TWO_HOURS_IN_MSEC = 1000 * 60 * 60 * 2;
 		final long THIRTY_MIN_IN_MSEC = 1000 * 60 * 30;
 
+		if (source.equalsIgnoreCase("add") || source.equalsIgnoreCase("fix") || source.equalsIgnoreCase("validate")
+				|| source.equalsIgnoreCase("remove") || source.equalsIgnoreCase("auto")) {
+			// nop
+		} else {
+			log.warn("bind source invalid= "+source);
+			return false;
+		}
+		source = source.toLowerCase();
+		
 		if (!location.isValid()) {
 			log.warn("invalid location="+location.full_space_name);
 		} else if (start_stamp.after(bind_stamp)) {
@@ -116,39 +126,47 @@ public class Bind implements Serializable {
 		     wifi_model = wifi_model.substring (0, wifi_max_length);
 		}
 
-		for (Iterator<AP_Scan> i = ap_scans.iterator(); i.hasNext();) {
-			AP_Scan scan = i.next();
-			if (scan.stamp.before(start_stamp)) {
-				i.remove();
-				log.debug("tossing too old scan");
-			} else if (scan.stamp.after(end_stamp)) {
-				i.remove();
-				log.debug("tossing too recent scan");
-			}
-			boolean validScan = scan.validate();
-			if (!validScan) {
-			    i.remove();
-			    log.debug("tossing invalid scan");
+		if (source.equalsIgnoreCase("remove")) {
+			// no scans when removing
+			return valid;	
+		}
+		if (ap_scans != null) {
+			for (Iterator<AP_Scan> i = ap_scans.iterator(); i.hasNext();) {
+				AP_Scan scan = i.next();
+				if (scan.stamp.before(start_stamp)) {
+					i.remove();
+					log.debug("tossing too old scan");
+				} else if (scan.stamp.after(end_stamp)) {
+					i.remove();
+					log.debug("tossing too recent scan");
+				}
+				boolean validScan = scan.validate();
+				if (!validScan) {
+					i.remove();
+					log.debug("tossing invalid scan");
+				}
 			}
 		}
 
-		if (ap_scans.size() == 0) {
+		if (!source.equals("remove") && ap_scans.size() == 0) {
 			log.debug("no valid scans");
 			valid = false;
 		}
-		
+
 		return valid;
 	}
 	
 	public String toString () {
 		StringBuffer scans = new StringBuffer ();
-		for (AP_Scan ap_scan : ap_scans) {
-			scans.append("["+ap_scan.toString()+"]");
+		if (ap_scans != null) {
+			for (AP_Scan ap_scan : ap_scans) {
+				scans.append("["+ap_scan.toString()+"]");
+			}
 		}
 		//return new String ("[version="+version+",ap_scans="+scans+"]");
 
 		return new String 
-		("[version="+version+",cookie="+cookie+",loc="+location+",est_loc="+est_location+
+		("[source="+source+",version="+version+",cookie="+cookie+",loc="+location+",est_loc="+est_location+
 		",bind_stamp="+bind_stamp+",start_stamp="+start_stamp+",end_stamp="+end_stamp+
 		",device="+device_model+",wifi="+wifi_model+
 		",ip="+client_ip+":"+client_port+",ap_scans="+scans+
@@ -159,6 +177,7 @@ public class Bind implements Serializable {
 	
 	// used by gson
 	private Bind() {
+		source = null;
 		version = 0;
 		cookie = null;
 		location = null;
@@ -212,10 +231,11 @@ public class Bind implements Serializable {
 	}
 	*/
 	
-	public Bind(Location location, Location est_location, Date bind_stamp, 
+	public Bind(String source, Location location, Location est_location, Date bind_stamp, 
 		    String device_model, String wifi_model, List<AP_Scan> ap_scans, String tags, String description) {
 		//log.debug("basic bind ctor");
-		
+
+		this.source = source;
 		this.location = location;
 		this.est_location = est_location;
 		this.bind_stamp = bind_stamp;
@@ -242,14 +262,19 @@ public class Bind implements Serializable {
 		start_stamp = null;
 		end_stamp = null;
 
-		for (Iterator<AP_Scan> i = ap_scans.iterator(); i.hasNext();) {
-			AP_Scan scan = i.next();
-			if (start_stamp == null || scan.stamp.before(start_stamp)) {
-				start_stamp = scan.stamp;
+		if (ap_scans != null) {
+			for (Iterator<AP_Scan> i = ap_scans.iterator(); i.hasNext();) {
+				AP_Scan scan = i.next();
+				if (start_stamp == null || scan.stamp.before(start_stamp)) {
+					start_stamp = scan.stamp;
+				}
+				if (end_stamp == null || scan.stamp.after(end_stamp)) {
+					end_stamp = scan.stamp;
+				}
 			}
-			if (end_stamp == null || scan.stamp.after(end_stamp)) {
-				end_stamp = scan.stamp;
-			}
+		} else {
+			start_stamp = bind_stamp;
+			end_stamp = bind_stamp;
 		}
 		log.debug ("set start_stamp "+start_stamp+ " end_stamp "+end_stamp);
 

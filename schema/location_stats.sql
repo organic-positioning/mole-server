@@ -16,28 +16,15 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # 
 
-
-# Obviously could be segmented further...
-
-CREATE TABLE `locations` (
+CREATE TABLE `location_stats` (
 `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-`timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-`country` CHAR(80),
-`region` CHAR(80),
-`city` CHAR(80),
-`area` CHAR(80),
-`floor` SMALLINT(2) DEFAULT '0',
-`name` CHAR(80),
+`location_id` INT UNSIGNED NOT NULL,
+`first_bind` DATETIME NOT NULL,
+`last_bind` DATETIME NOT NULL,
+`hit_count` FLOAT(5,3) NOT NULL,
+`bind_count` FLOAT(5,3) NOT NULL,
 `is_changed` TINYINT(1) DEFAULT '1',
-`is_active` TINYINT(1) DEFAULT '1',
 PRIMARY KEY (id),
-INDEX (country),
-INDEX (country,region),
-INDEX (country,region,city),
-INDEX (country,region,city,area),
-INDEX (country,region,city,area,floor),
-INDEX (country,region,city,area,floor,name),
-INDEX (is_active),
-INDEX (is_changed),
-UNIQUE (country,region,city,area,floor,name)
+UNIQUE (location_id),
+FOREIGN KEY (location_id) REFERENCES locations(id)
 ) ENGINE = InnoDB;

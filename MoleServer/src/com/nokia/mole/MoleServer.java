@@ -30,6 +30,8 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.Properties;
 
 import javax.servlet.ServletException;
@@ -60,7 +62,7 @@ import com.nokia.mole.util.PathUtil;
  
 public class MoleServer extends AbstractHandler
 {
-    static String version = "v0.1.1";
+    static String version = "v0.6.0";
 
 	
     static Properties properties;
@@ -220,17 +222,23 @@ public class MoleServer extends AbstractHandler
 
 
 	    String mac = request.getParameter("mac");
+	    String mac2 = request.getParameter("mac2");
 	    int areas_found = 0;
 
-	    if (mac == null || mac.isEmpty() || mac.length() > 20) {
+	    if (mac == null || mac.isEmpty() || mac.length() > 20 ||
+		(mac2 != null && !mac2.isEmpty() && mac2.length() > 20)) {
 		response.setStatus(HttpServletResponse.SC_NOT_ACCEPTABLE);
 		log.warn("getAreas invalid mac="+mac);
 
 	    } else {
 
-		List<String> areas = new ArrayList<String> ();
+		//List<String> areas = new ArrayList<String> ();
+		Set<String> areas = new HashSet<String> ();
 		try {
 		    db.findArea(mac, areas);
+		    if (mac2 != null && !mac2.isEmpty()) {
+			db.findArea(mac2, areas);
+		    }
 					 
 		} catch (Exception ex) {
 		    log.warn ("findArea exception "+ex);

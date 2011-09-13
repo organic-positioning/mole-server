@@ -36,7 +36,7 @@ public class RequestState {
 	public final String agent;
 	public final String client_address;
 	public final int client_port;
-	public final int version;
+	public final String version;
 
 	public static RequestState newRequestState(HttpServletRequest request) {
 
@@ -50,7 +50,7 @@ public class RequestState {
 
 		String cookie = null;
 		String session = null;
-		int version = -1;
+		String version = null;
 
 		Cookie[] cookies = request.getCookies();
 		if (cookies != null) {
@@ -61,14 +61,7 @@ public class RequestState {
 				if (cookies[c].getName().equals("cookie")) {
 					cookie = cookies[c].getValue();
 				} else if (cookies[c].getName().equals("mole_version")) {
-					try {
-						version = Integer.parseInt(cookies[c].getValue());
-					} catch (NumberFormatException ex) {
-						log.warn("failed to parse version cookie "
-								+ cookies[c].getValue());
-						return null;
-					}
-
+				    version = cookies[c].getValue();
 				} else if (cookies[c].getName().equals("session")) {
 					session = cookies[c].getValue();
 				}
@@ -78,7 +71,7 @@ public class RequestState {
 			return null;
 		}
 
-		if (cookie == null || session == null || version < 0) {
+		if (cookie == null || session == null || version == null) {
 			log.info("required cookies not found"+
 				 " cookie="+cookie+
 				 " session="+session+
@@ -93,7 +86,7 @@ public class RequestState {
 
 	private RequestState(String uRI, String method, String cookie,
 			String session, String agent, String clientAddress, int clientPort,
-			int version) {
+			String version) {
 		URI = uRI;
 		this.method = method;
 		this.cookie = cookie;

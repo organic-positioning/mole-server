@@ -1,6 +1,6 @@
 # 
 # Mole - Mobile Organic Localisation Engine
-# Copyright (C) 2010 Nokia Corporation.  All rights reserved.
+# Copyright (C) 2010, 2011 Nokia Corporation.  All rights reserved.
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -33,9 +33,11 @@ CREATE TABLE `binds` (
 `client_port` SMALLINT UNSIGNED NOT NULL,
 `client_version` SMALLINT UNSIGNED NOT NULL,
 `is_new` TINYINT(1) DEFAULT '1',
+`source` ENUM('add','fix','validate','remove','auto') NOT NULL,
 PRIMARY KEY (id),
 INDEX (is_new),
 FOREIGN KEY (location_id) REFERENCES locations(id),
 FOREIGN KEY (est_location_id) REFERENCES locations(id)
 ) ENGINE = InnoDB;
+
 
