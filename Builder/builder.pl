@@ -342,14 +342,19 @@ sub process_bind {
 	my $ap_stat = $ap_stats->[$a];
 	my $weight = $ap_stat->{count} / $total_count;
 	$log->debug ("weight ap ".$ap_stat->{bssid}." $weight");
-	$ap2weight{$ap_stat->{bssid}} = $weight;
 
-	# pull stddev toward a common value, based on number of readings
-	my $stddev = $ap_stat->{stddev};
-	my $pow = $ap_stat->{count}**1;
-	my $b_stddev = (($pow-1) * $stddev + $AVG_STDDEV) / $pow;
-	$ap_stats->[$a]->{stddev} = $b_stddev;
+	if ($weight > 0.001) {
+	    $ap2weight{$ap_stat->{bssid}} = $weight;
 
+	    # pull stddev toward a common value, based on number of readings
+	    my $stddev = $ap_stat->{stddev};
+	    my $pow = $ap_stat->{count}**1;
+	    my $b_stddev = (($pow-1) * $stddev + $AVG_STDDEV) / $pow;
+	    $ap_stats->[$a]->{stddev} = $b_stddev;
+	} else {
+	    # prevent aps with what gets rounded down to 0 weight from being put into the fingerprint
+	    undef ($ap2weight{$ap_stat->{bssid}});
+	}
     }
 
     # histogram generation
