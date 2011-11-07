@@ -36,7 +36,7 @@ public class Bind implements Serializable {
 	static final long serialVersionUID = 0L;
 
 	public String source;
-	public int version;
+	public String version;
 	public Cookie cookie;
 	public Cookie session;
 	final public Location location;
@@ -75,6 +75,8 @@ public class Bind implements Serializable {
 		final long DAY_IN_MSEC = 1000 * 60 * 60 * 24;
 		final long TWO_HOURS_IN_MSEC = 1000 * 60 * 60 * 2;
 		final long THIRTY_MIN_IN_MSEC = 1000 * 60 * 30;
+
+	    log.debug ("start bind validate");
 
 		if (source.equalsIgnoreCase("add") || source.equalsIgnoreCase("fix") || source.equalsIgnoreCase("validate")
 				|| source.equalsIgnoreCase("remove") || source.equalsIgnoreCase("auto")) {
@@ -125,6 +127,7 @@ public class Bind implements Serializable {
 		if (wifi_model.length() > wifi_max_length) {
 		     wifi_model = wifi_model.substring (0, wifi_max_length);
 		}
+		log.debug ("middle bind validate");
 
 		if (source.equalsIgnoreCase("remove")) {
 			// no scans when removing
@@ -152,6 +155,7 @@ public class Bind implements Serializable {
 			log.debug("no valid scans");
 			valid = false;
 		}
+		log.debug ("end bind validate");
 
 		return valid;
 	}
@@ -178,7 +182,7 @@ public class Bind implements Serializable {
 	// used by gson
 	private Bind() {
 		source = null;
-		version = 0;
+		version = null;
 		cookie = null;
 		location = null;
 		est_location = null;

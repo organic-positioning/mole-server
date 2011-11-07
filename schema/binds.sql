@@ -31,7 +31,7 @@ CREATE TABLE `binds` (
 # yes, client_ip could be compacted
 `client_ip` CHAR(15) NOT NULL,
 `client_port` SMALLINT UNSIGNED NOT NULL,
-`client_version` SMALLINT UNSIGNED NOT NULL,
+`client_version` CHAR(10) NOT NULL,
 `is_new` TINYINT(1) DEFAULT '1',
 `source` ENUM('add','fix','validate','remove','auto') NOT NULL,
 PRIMARY KEY (id),

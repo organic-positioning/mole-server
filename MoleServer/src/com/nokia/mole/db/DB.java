@@ -305,7 +305,7 @@ public class DB {
 		bind_insert_stmt.setNString(8, bind.wifi_model);
 		bind_insert_stmt.setNString (9, bind.client_ip);
 		bind_insert_stmt.setInt (10, bind.client_port);
-		bind_insert_stmt.setInt (11, bind.version);
+		bind_insert_stmt.setNString (11, bind.version);
 		bind_insert_stmt.setNString (12, bind.source);
 		
 		bind_insert_stmt.executeUpdate();
@@ -447,6 +447,7 @@ public class DB {
 		//log.debug ("bind_copy = "+bind_copy);
 		//binds.add(bind_copy);
 
+	    log.debug ("start recordBind");
 		if (bind.validate()) {
 
 			synchronized (binds) {
@@ -458,6 +459,7 @@ public class DB {
 			log.info("rejecting bind="+bind);
 			return false;
 		}
+
 	}
 
 	// periodically flush the binds to the actual DB

@@ -75,19 +75,19 @@ public class AP_Reading implements Serializable {
 	}
 
     public boolean validate () {
-	pBssid = bssid.toLowerCase();
-	pSsid = ssid;
-	if (pSsid.length() > 20) {
-	    pSsid = ssid.substring(0, 20);
-	}
+    	pBssid = bssid.toLowerCase();
+    	pSsid = ssid;
+    	if (pSsid.length() > 20) {
+    	    pSsid = ssid.substring(0, 20);
+    	}
 
-	// TODO canonicalize MAC addresses
+    	// TODO canonicalize MAC addresses
 
-	Matcher matcher = MacPattern.matcher (pBssid);
-	if (!matcher.find()) {
-	    log.warn ("invalid bssid "+bssid);
-	    return false;
-	}
+    	Matcher matcher = MacPattern.matcher (pBssid);
+    	if (!matcher.find()) {
+    	    log.warn ("invalid bssid "+bssid);
+    	    return false;
+    	}
 
 	pLevel = level;
 	if (pLevel < 0) {

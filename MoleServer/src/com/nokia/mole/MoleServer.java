@@ -1,7 +1,7 @@
 /*
  * 
  * Mole - Mobile Organic Localisation Engine
- * Copyright (C) 2010 Nokia Corporation.  All rights reserved.
+ * Copyright (C) 2010-2011 Nokia Corporation.  All rights reserved.
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -26,21 +26,19 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Type;
-import java.net.InetAddress;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
-import java.util.Set;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-//import org.apache.log4j.BasicConfigurator;
-import org.apache.log4j.PropertyConfigurator;
 import org.apache.log4j.Logger;
+import org.apache.log4j.PropertyConfigurator;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.handler.AbstractHandler;
@@ -58,6 +56,8 @@ import com.nokia.mole.common.Bind;
 import com.nokia.mole.common.Posti;
 import com.nokia.mole.db.DB;
 import com.nokia.mole.db.WhereAmI;
+import com.nokia.mole.proximity.LabeledSignature;
+import com.nokia.mole.proximity.ProximityResolver;
 import com.nokia.mole.util.PathUtil;
  
 public class MoleServer extends AbstractHandler
@@ -69,6 +69,7 @@ public class MoleServer extends AbstractHandler
     static Logger log;
 
     private DB db;
+    private ProximityResolver proximityResolver;
     private WhereAmI whereAmI;
     private Gson gson;
 
@@ -107,6 +108,7 @@ public class MoleServer extends AbstractHandler
 
     public MoleServer () throws IOException {
 	db = new DB();
+	proximityResolver = new ProximityResolver();
 	whereAmI = new WhereAmI ();
 	GsonBuilder gBuilder = new GsonBuilder();
 	gBuilder.registerTypeAdapter(Date.class, new DateDeserializer()).create();
@@ -169,7 +171,8 @@ public class MoleServer extends AbstractHandler
 	}
 
 	log.info ("state="+state);
- 
+	//log.debug ("state"); 
+	//log.debug ("state "+state.URI); 
 		
 	if (state.URI.equals("/bind") && state.method.equals("POST")) {
 
@@ -189,7 +192,6 @@ public class MoleServer extends AbstractHandler
 
 	    boolean valid_bind = false;
 
-
             BufferedReader reader = request.getReader();
             
             try {
@@ -201,10 +203,12 @@ public class MoleServer extends AbstractHandler
             	//String bind = gson.fromJson(reader, String.class);
             	
             	Bind bind = gson.fromJson (reader, Bind.class);
+
             	bind.setState (state);
             	log.info ("remote bind "+bind);
             	//log.debug ("location "+location);
             	valid_bind = db.recordBind(bind);
+
             	
             	valid_bind = true;
             	
@@ -214,7 +218,6 @@ public class MoleServer extends AbstractHandler
             }
 
             accept (response, "OK");
-            
 
 	    log.info ("bind valid="+valid_bind+ " state="+state);
 			
@@ -268,6 +271,37 @@ public class MoleServer extends AbstractHandler
 	    }
 	    log.info("getAreas mac="+mac+" areas="+areas_found+" state="+state);
 
+	} else if (state.URI.equals("/proximity") && state.method.equals("POST")) {
+
+		
+		BufferedReader reader = request.getReader();
+        
+		String responseStr = "{\"error\":\"invalid input\"}";
+        try {
+        	LabeledSignature labeledSig = gson.fromJson (reader, LabeledSignature.class);
+        	LabeledSignature.initAndValidate (labeledSig);
+        	if (labeledSig == null) {
+        		log.warn ("null labeledSig");
+        		responseStr = "{\"error\":\"invalid input\"}";
+        	} else {
+        		labeledSig.setId (state.cookie);
+        		log.debug ("received labeledSig "+labeledSig);
+        		Map<String,Double> labeledSimilarities = proximityResolver.findNearby(labeledSig);
+        		responseStr = gson.toJson(labeledSimilarities);
+      	      	log.debug("prox resp="+responseStr);
+        	}
+        	
+        } catch (Exception ex) {
+        	log.debug ("ex="+ex);
+        	ex.printStackTrace();
+        	responseStr = "{\"error\":\"server error\"}";
+        }
+
+        accept (response, responseStr);
+        log.info ("OK proximity request state="+state);
+		
+		
+		
 	} else if (state.URI.equals("/posti/pub") && state.method.equals("POST")) {
 	    boolean valid_pub = false;
 
@@ -280,34 +314,34 @@ public class MoleServer extends AbstractHandler
 	      log.debug(pJson);
 	    */
 			
-            BufferedReader reader = request.getReader();
-            
-            try {
-            	//BasicBind bb2 = gson.fromJson (bbJson, BasicBind.class);
-            	//log.debug (bb2);
-            	
-            	//Location location = gson.fromJson (reader, Location.class);
-            	//Cookie bind = gson.fromJson (reader, Cookie.class);
-            	//String bind = gson.fromJson(reader, String.class);
-            	
-            	Posti posti = gson.fromJson (reader, Posti.class);
-		if (posti == null) {
-		    log.warn ("null posti");
-		} else {
-		    posti.setClient (request.getRemoteAddr(),request.getRemotePort());
-		    log.debug ("remote posti "+posti);
-		    //log.debug ("location "+location);
-		    valid_pub = db.recordPost(posti);
-		}
-            	
-            } catch (Exception ex) {
-            	log.debug ("ex="+ex);
-            	ex.printStackTrace();
-            }
+	    BufferedReader reader = request.getReader();
+        
+        try {
+        	//BasicBind bb2 = gson.fromJson (bbJson, BasicBind.class);
+        	//log.debug (bb2);
+        	
+        	//Location location = gson.fromJson (reader, Location.class);
+        	//Cookie bind = gson.fromJson (reader, Cookie.class);
+        	//String bind = gson.fromJson(reader, String.class);
+        	
+        	Posti posti = gson.fromJson (reader, Posti.class);
+	if (posti == null) {
+	    log.warn ("null posti");
+	} else {
+	    posti.setClient (request.getRemoteAddr(),request.getRemotePort());
+	    log.debug ("remote posti "+posti);
+	    //log.debug ("location "+location);
+	    valid_pub = db.recordPost(posti);
+	}
+        	
+        } catch (Exception ex) {
+        	log.debug ("ex="+ex);
+        	ex.printStackTrace();
+        }
 
-            accept (response, "OK");
-            log.info ("post valid="+valid_pub+ " state="+state);
-			
+        accept (response, "OK");
+        log.info ("post valid="+valid_pub+ " state="+state);
+		
 			
 	} else if (state.URI.equals("/posti/sub") && state.method.equals("GET")) {
 
@@ -437,13 +471,13 @@ public class MoleServer extends AbstractHandler
     */
 	
     class DateDeserializer implements JsonDeserializer<Date> {
-	public Date deserialize (JsonElement json, Type typeOfT, JsonDeserializationContext context)
-	    throws JsonParseException {
-	    long sec = json.getAsLong();
-	    //log.debug ("parse got sec="+sec);
-	    return new Date (sec*1000);
-	}
-    }
+    	public Date deserialize (JsonElement json, Type typeOfT, JsonDeserializationContext context)
+    	    throws JsonParseException {
+    	    long sec = json.getAsLong();
+    	    //log.debug ("parse got sec="+sec);
+    	    return new Date (sec*1000);
+    	}
+        }
 	
     class DateSerializer implements JsonSerializer<Date> {
 	@Override
@@ -453,5 +487,14 @@ public class MoleServer extends AbstractHandler
 	}
     }
 	
-	
+	/*
+    class LabeledSignatureDeserializer implements JsonDeserializer<LabeledSignature> {
+    	public LabeledSignature deserialize (JsonElement json, Type typeOfT, JsonDeserializationContext context)
+    	    throws JsonParseException {
+    	    String label = json.getAsString();
+    	    json.getAsJsonArray();
+    	    return new LabeledSignature (json.getAsJsonPrimitive().getAsString());
+    	}
+        }
+    */
 }
