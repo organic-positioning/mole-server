@@ -84,33 +84,35 @@ public class MemoryDB implements DB, Serializable {
 	}
 
 	public List<LocationProbability> query(Query query) {
-		if (query == null) {
-			log.warn("query received null query");
-			return null;
-		}
-		Fingerprint userFp = new Fingerprint (query.scans);
-		Set<Location> potentialLocations = new HashSet<Location>();
-		for (Mac mac : userFp.getMacs()) {
-			Set<Location> macsLocations = mac2loc.get(mac);
-			if (macsLocations != null) {
-				potentialLocations.addAll(macsLocations);
+		List<LocationProbability> locProbabilities = new ArrayList<LocationProbability>();
+		try {
+			Fingerprint userFp = new Fingerprint (query.scans);
+			Set<Location> potentialLocations = new HashSet<Location>();
+			for (Mac mac : userFp.getMacs()) {
+				Set<Location> macsLocations = mac2loc.get(mac);
+				if (macsLocations != null) {
+					potentialLocations.addAll(macsLocations);
+				}
 			}
+
+
+			for (Location location : potentialLocations) {
+				Fingerprint poiFP = loc2fp.get(location);
+				if (poiFP != null) {
+					double similarity = Fingerprint.similarity(userFp, poiFP);
+					log.debug(location+" score="+similarity);
+					locProbabilities.add(new LocationProbability(location, similarity));
+				}
+			}
+		} catch (NullPointerException ex) {
+			log.warn("NPE parsing query");
 		}
 
-		List<LocationProbability> locProbabilities = new ArrayList<LocationProbability>();
-		for (Location location : potentialLocations) {
-			Fingerprint poiFP = loc2fp.get(location);
-			if (poiFP != null) {
-				double similarity = Fingerprint.similarity(userFp, poiFP);
-				log.debug(location+" score="+similarity);
-				locProbabilities.add(new LocationProbability(location, similarity));
-			}
-		}
 		final int MaxLocationsReturnedByQuery = 20;
 		Collections.sort(locProbabilities);
 		return locProbabilities.subList(0, locProbabilities.size() > MaxLocationsReturnedByQuery ? MaxLocationsReturnedByQuery : locProbabilities.size());
 	}
-	
+
 	public boolean remove(Remove remove) {
 		if (remove== null) {
 			log.warn("remove received null remove");

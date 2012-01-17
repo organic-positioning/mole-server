@@ -24,7 +24,7 @@
 <!--     <pathelement location="${lib}/commons-cli-1.2.jar" /> -->
 <!--     <pathelement location="${lib}/commons-lang-2.4.jar" /> -->
 <!--     <pathelement location="${lib}/commons-logging-1.1.jar" /> -->
-     <pathelement location="${lib}/gson-1.4.jar" />
+     <pathelement location="${lib}/gson-2.0.jar" />
      <pathelement location="${lib}/jetty-all-7.0.1.v20091125.jar" />
 <!--     <pathelement location="${lib}/jdom.jar" /> -->
 <!--     <pathelement location="${lib}/je.jar" /> -->
@@ -68,7 +68,7 @@
       <!-- <zipfileset src="${lib}/commons-cli-1.2.jar" /> -->
       <!-- <zipfileset src="${lib}/commons-lang-2.4.jar" /> -->
       <!-- <zipfileset src="${lib}/commons-logging-1.1.1.jar" /> -->
-      <zipfileset src="${lib}/gson-1.4.jar" />
+      <zipfileset src="${lib}/gson-2.0.jar" />
       <zipfileset src="${lib}/jetty-all-7.0.1.v20091125.jar" />
       <!-- <zipfileset src="${lib}/jdom.jar" /> -->
       <!-- <zipfileset src="${lib}/je.jar" /> -->
