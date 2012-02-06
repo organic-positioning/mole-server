@@ -12,10 +12,10 @@
   <property name="version" value="0.6.0" />
   
   <property name="molews-jar" value="MoleWS-${version}.jar" />
-  <property name="molews.config" value="${molews.cfg}" />
+  <property name="moleWS.config" value="${moleWS.cfg}" />
   <!-- <property name="molews.config" value="config/molews.cfg" /> -->
   <!-- <property name="log4j-config.file" value="file:config/log.cfg" /> -->
-  <property name="molews.log4cfg" value="${molews.log4cfg}" />
+  <property name="moleWS.log4cfg" value="${moleWS.log4cfg}" />
   <!-- <property name="java.util.logging.config.file" value="config/log.cfg" /> -->
   
   <path id="classpath">
@@ -140,8 +140,9 @@
       </classpath>
       <jvmarg value="-ea"/>
       <sysproperty key="java.library.path" value="lib" />
-      <!-- <sysproperty key="molews.config" value="${molews.config}" />
-      <sysproperty key="molews.comm_port" value="${molews.comm_port}" />
+      <sysproperty key="moleWS.config" value="${moleWS.config}" />
+      <sysproperty key="moleWS.log4cfg" value="${moleWS.log4cfg}" />
+      <!-- <sysproperty key="molews.comm_port" value="${molews.comm_port}" />
       <sysproperty key="molews.zone" value="${molews.zone}" /> -->
 
        <syspropertyset>

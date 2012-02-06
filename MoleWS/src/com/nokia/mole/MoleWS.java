@@ -54,7 +54,7 @@ public class MoleWS extends AbstractHandler
    
     static {
 
-    	String log4j_conf = System.getProperty ("moleWS.log4cfg", "config/log-console.cfg");
+    	String log4j_conf = System.getProperty ("moleWS.log4cfg", "config/log.cfg");
     	String main_conf = System.getProperty ("moleWS.config", "config/moleWS.cfg");
     	System.out.println ("main_conf="+main_conf + " logj_conf="+log4j_conf);
 

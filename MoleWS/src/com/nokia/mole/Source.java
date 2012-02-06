@@ -30,30 +30,26 @@ public class Source implements Serializable {
 	private static final long serialVersionUID = 285725805698964462L;
 	static Logger log = Logger.getLogger(Source.class);
 
-	final public String key;
-	final public String secret;
+	final public String uuid;
 
 	final public String device;
 	final public String version;
 	
 	public Source() {
-		this.key = null;
-		this.secret = null;
+		this.uuid = null;
 		this.device = null;
 		this.version = null;
 	}
 
-	public Source(String key, String secret, String device, String version) {
-		this.key = key;
-		this.secret = secret;
+	public Source(String uuid, String secret, String device, String version) {
+		this.uuid = uuid;
 		this.device = device;
 		this.version = version;
 	}
 
 	@Override
 	public String toString() {
-		return "Source [device=" + device + ", key=" + key + ", secret="
-				+ secret + ", version=" + version + "]";
+		return "Source [device=" + device + ", uuid=" + uuid + ", version=" + version + "]";
 	}
 	
 
