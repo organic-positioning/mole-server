@@ -21,6 +21,7 @@
 package com.nokia.mole;
 
 import java.util.List;
+import java.util.Map;
 
 public interface DB {
 
@@ -29,5 +30,9 @@ public interface DB {
 	public abstract List<LocationProbability> query(Query query);
 
 	public abstract boolean remove(Remove remove);
+
+	public abstract void clear();
+
+	public abstract Map<Location, List<Scan>> getLocationScans();
 
 }

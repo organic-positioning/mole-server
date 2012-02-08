@@ -26,7 +26,7 @@ my $hostname = hostname;
 my %para = ();
 my $main_cfg_file = "config/moleWS.cfg";
 my $log_cfg_file = "config/log.cfg";
-getopts('c:l:', \%para);
+getopts('c:l:e', \%para);
 if (defined ($para{'c'})) {
     $main_cfg_file = $para{'c'};
 }
@@ -50,6 +50,9 @@ my $moleWS_config="-DmoleWS.cfg=$main_cfg_file -DmoleWS.log4cfg=$log_cfg_file";
 
 
 my $CMD="$ANT $moleWS_config run";
+if (defined ($para{'e'})) {
+    $CMD = "$ANT $moleWS_config run-eval";
+}
 
 print "Launching... $CMD";
 exec ($CMD);

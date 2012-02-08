@@ -40,5 +40,11 @@ public class Scan implements Serializable {
 	public Scan(List<Reading> readings) {
 		this.readings = readings;
 	}
+
+	@Override
+	public String toString() {
+		return "Scan [readings=" + readings + "]";
+	}
+	
 	
 }

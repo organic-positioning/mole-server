@@ -46,6 +46,10 @@ public class MemoryDB implements DB, Serializable {
 	Map<Location,Fingerprint> loc2fp = new ConcurrentHashMap<Location,Fingerprint>();
 	Map<Mac,Set<Location>> mac2loc = new ConcurrentHashMap<Mac,Set<Location>>();
 	
+	// for testing
+	public static boolean recordScans = true;
+	Map<Location,List<Scan>> location2scans = new ConcurrentHashMap<Location, List<Scan>>();
+	
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
@@ -80,6 +84,10 @@ public class MemoryDB implements DB, Serializable {
 				locations.add(bind.location);
 			}
 		}
+		if (recordScans) {
+			location2scans.put(bind.location, bind.scans);
+		}
+		
 		return true;
 	}
 
@@ -143,7 +151,7 @@ public class MemoryDB implements DB, Serializable {
 	}
 	
 	public MemoryDB () {
-		log.debug ("MemoryDB dbFilename="+dbFilename);
+		log.debug ("MemoryDB dbFilename="+dbFilename+ " recordingScans="+recordScans);
 	}
 	
     public static DB loadDB () {
@@ -184,5 +192,15 @@ public class MemoryDB implements DB, Serializable {
 			e.printStackTrace();
 		} 
     }
+
+	public void clear() {
+		loc2fp.clear();
+		mac2loc.clear();
+		// don't clear location2scans
+	}
+
+	public Map<Location, List<Scan>> getLocationScans() {
+		return location2scans;
+	}
 	
 }

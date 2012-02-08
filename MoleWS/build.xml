@@ -129,7 +129,28 @@
   
   <target name="run" depends="compile" description="Execute MoleWS from classes.">
     <java classname="com.nokia.mole.MoleWS" fork="true"
-	  maxmemory="32m">
+	  maxmemory="256m">
+  <assertions>
+    <enable/>
+  </assertions>
+      <classpath refid="classpath"/>
+      <classpath>
+	<pathelement location="${build}"/>
+      </classpath>
+      <jvmarg value="-ea"/>
+      <sysproperty key="java.library.path" value="lib" />
+      <sysproperty key="moleWS.config" value="${moleWS.config}" />
+      <sysproperty key="moleWS.log4cfg" value="${moleWS.log4cfg}" />
+       <syspropertyset>
+	 <propertyref prefix="molews" />
+       </syspropertyset>
+    </java>
+  </target>	
+
+
+  <target name="run-eval" depends="compile" description="Execute AlgEval from classes.">
+    <java classname="com.nokia.mole.test.AlgEval" fork="true"
+	  maxmemory="256m">
   <assertions>
     <enable/>
   </assertions>
@@ -142,18 +163,13 @@
       <sysproperty key="java.library.path" value="lib" />
       <sysproperty key="moleWS.config" value="${moleWS.config}" />
       <sysproperty key="moleWS.log4cfg" value="${moleWS.log4cfg}" />
-      <!-- <sysproperty key="molews.comm_port" value="${molews.comm_port}" />
-      <sysproperty key="molews.zone" value="${molews.zone}" /> -->
-
        <syspropertyset>
 	 <propertyref prefix="molews" />
        </syspropertyset>
-
-      <!-- <sysproperty key="molews.comm_port" value="9000" /> -->
-      <!-- <sysproperty key="log4j.configuration" value="${log4j-config.file}" /> -->
-      
     </java>
   </target>	
+
+
 
   <target name="run-jar" description="Execute MoleWS from the jar file.">		
     <java classname="com.nokia.mole.MoleWS" fork="false" maxmemory="128m">

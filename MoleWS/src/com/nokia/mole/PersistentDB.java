@@ -24,6 +24,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.log4j.Logger;
 
@@ -112,6 +113,18 @@ public class PersistentDB implements DB {
 			return false;
 		}
 		return true;
+	}
+
+	@Override
+	public void clear() {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public Map<Location, List<Scan>> getLocationScans() {
+		// TODO Auto-generated method stub
+		return null;
 	}
 
 
