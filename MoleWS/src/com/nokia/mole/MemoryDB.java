@@ -41,7 +41,7 @@ public class MemoryDB implements DB, Serializable {
 	
 	private static final long serialVersionUID = -6877252405133374978L;
 	static Logger log = Logger.getLogger(MemoryDB.class);
-    public static String dbFilename = MoleWS.getProperty("moleWS.db_filename", "/var/cache/mole/ws.db");
+	public static String dbFilename = MoleWS.getProperty("moleWS.db_filename", "/var/cache/mole/ws.db");
     
 	Map<Location,Fingerprint> loc2fp = new ConcurrentHashMap<Location,Fingerprint>();
 	Map<Mac,Set<Location>> mac2loc = new ConcurrentHashMap<Mac,Set<Location>>();

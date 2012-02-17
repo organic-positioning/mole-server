@@ -25,7 +25,6 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Date;
 import java.util.List;
 import java.util.Properties;
 
@@ -56,6 +55,7 @@ public class MoleWS extends AbstractHandler
 
     	String log4j_conf = System.getProperty ("moleWS.log4cfg", "config/log.cfg");
     	String main_conf = System.getProperty ("moleWS.config", "config/moleWS.cfg");
+    	
     	System.out.println ("main_conf="+main_conf + " logj_conf="+log4j_conf);
 
     	PropertyConfigurator.configure(log4j_conf);
@@ -82,9 +82,14 @@ public class MoleWS extends AbstractHandler
 
     public static int SERVER_PORT = Integer.parseInt (MoleWS.getProperty("moleWS.server_port", "8090"));
 
-    
+    boolean useDynamo = false;
     public MoleWS () throws IOException {
-    	db = MemoryDB.loadDB();
+    	useDynamo = true;
+    	if (useDynamo) {
+    	db = new DynamoDB();
+    	} else {    	
+    		db = MemoryDB.loadDB();
+    	}
     	GsonBuilder gBuilder = new GsonBuilder();
 		gBuilder.registerTypeAdapter(Mac.class, new Mac().new MacDeserializer()).create();
     	gson = gBuilder.create();
@@ -166,7 +171,9 @@ public class MoleWS extends AbstractHandler
 
     	// simple save of the db each time
     	if (dirty) {
-    		MemoryDB.saveDB(db);
+    		if (useDynamo) {
+    			MemoryDB.saveDB(db);
+    		}	
     	}
     }
  
@@ -182,6 +189,10 @@ public class MoleWS extends AbstractHandler
     	server.join();
     }
 
+    public static String getProperty (String key) {
+    	return getProperty(key, null);
+    }
+    
     public static String getProperty (String key, String default_value) {
 
     	if (properties.containsKey(key)) {

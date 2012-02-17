@@ -31,6 +31,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.nokia.mole.Bind;
 import com.nokia.mole.DB;
+import com.nokia.mole.DynamoDB;
 import com.nokia.mole.Location;
 import com.nokia.mole.LocationProbability;
 import com.nokia.mole.Mac;
@@ -55,9 +56,11 @@ public class DBTest {
     	MemoryDB.dbFilename = "/tmp/moleWS.db";
     	
     	
-    	DB db = MemoryDB.loadDB();
-    	log.debug(db);
+    	//DB db = MemoryDB.loadDB();
+    	//log.debug(db);
     	//DB db = new MemoryDB();
+    	
+    	DB db = new DynamoDB();
     	
     	Source source = new Source ("key1", "secret1", "device1", "version1");
     	
