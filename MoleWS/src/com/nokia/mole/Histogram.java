@@ -89,7 +89,9 @@ public class Histogram implements Serializable {
 
 			readingCount++;
 		} else {
-			log.warn("addValue out of bounds v="+v);
+			if (v > 100 || v < 0) {
+				log.warn("addValue out of bounds v="+v);
+			}
 		}
 	}
 

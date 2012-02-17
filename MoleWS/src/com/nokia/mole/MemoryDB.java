@@ -151,7 +151,7 @@ public class MemoryDB implements DB, Serializable {
 	}
 	
 	public MemoryDB () {
-		log.debug ("MemoryDB dbFilename="+dbFilename+ " recordingScans="+recordScans);
+		log.warn ("MemoryDB dbFilename="+dbFilename+ " recordingScans="+recordScans);
 	}
 	
     public static DB loadDB () {
