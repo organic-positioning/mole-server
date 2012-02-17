@@ -110,7 +110,7 @@ public class DynamoDB implements DB {
 	private void put(Mac mac, Set<Location> locations) {
 		Map<String, AttributeValue> item = new HashMap<String, AttributeValue>();
 		String macJson = gson.toJson(mac);
-		String locationsJson = gson.toJson(locations.toArray(), locationListType);
+		String locationsJson = gson.toJson(locations, locationListType);
 		item.put(macAttr, new AttributeValue().withS(macJson));
 		item.put(locsAttr, new AttributeValue().withS(locationsJson));
 		PutItemRequest itemRequest = new PutItemRequest().withTableName(mac2locsTable).withItem(item);
@@ -128,7 +128,8 @@ public class DynamoDB implements DB {
 
 		GetItemResult result = client.getItem(getItemRequest);
 		Map<String,AttributeValue> results = result.getItem(); 
-		if (results.containsKey(locsAttr)) {
+		// we receive null if it's not found
+		if (results != null && results.containsKey(locsAttr)) {
 			AttributeValue value = results.get(locsAttr);
 			String locationsJson = value.getS();
 			assert (locationsJson.length() > 2);
