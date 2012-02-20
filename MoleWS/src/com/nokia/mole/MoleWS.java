@@ -81,12 +81,13 @@ public class MoleWS extends AbstractHandler
     }
 
     public static int SERVER_PORT = Integer.parseInt (MoleWS.getProperty("moleWS.server_port", "8090"));
-
+    public static int CACHE_DYNAMO_PERIOD = Integer.parseInt (MoleWS.getProperty("moleWS.cache_dyanmo_period", "10"));
+    
     boolean useDynamo = false;
     public MoleWS () throws IOException {
     	useDynamo = true;
     	if (useDynamo) {
-    	db = new DynamoDB();
+    		db = new DynamoDB(CACHE_DYNAMO_PERIOD);
     	} else {    	
     		db = MemoryDB.loadDB();
     	}

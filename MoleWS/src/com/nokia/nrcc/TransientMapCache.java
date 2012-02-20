@@ -20,8 +20,8 @@
 package com.nokia.nrcc;
 
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 
@@ -30,8 +30,7 @@ public class TransientMapCache<K extends Comparable<K>,V> implements MapCache<K,
 	static Logger log = Logger.getLogger(TransientMapCache.class);
 
 	final int EXPIRE_SECONDS;
-	//Map<K,TransientValue> map = new ConcurrentHashMap<K, TransientValue>();
-	Map<K,TransientValue> map = new HashMap<K, TransientValue>();
+	Map<K,TransientValue> map = new ConcurrentHashMap<K, TransientValue>();
 
 	public TransientMapCache(int expirationSeconds) {
 		EXPIRE_SECONDS = expirationSeconds;
@@ -82,6 +81,10 @@ public class TransientMapCache<K extends Comparable<K>,V> implements MapCache<K,
 		if (map.containsKey(key)) {
 			map.remove(key);
 		}
+	}
+
+	public void clear() {
+		map.clear();
 	}
 	
 }

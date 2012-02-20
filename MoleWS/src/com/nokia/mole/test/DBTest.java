@@ -53,7 +53,7 @@ public class DBTest {
 	
     public static void main(String[] args) {
     	System.out.println ("Starting internal API test");
-    	boolean useMemoryDB = true;
+    	boolean useMemoryDB = false;
     	
     	DB db = null;
     	if (useMemoryDB) {
@@ -62,7 +62,8 @@ public class DBTest {
     		log.debug(db);
     		//DB db = new MemoryDB();
     	} else {
-    		db = new DynamoDB();
+    		final int cachePeriod = 10; // sec
+    		db = new DynamoDB(cachePeriod);
     		log.warn("Deleting db...");
 //    		try {
 //				Thread.sleep(10000);

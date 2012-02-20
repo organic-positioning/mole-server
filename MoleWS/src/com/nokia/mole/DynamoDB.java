@@ -44,6 +44,7 @@ import com.amazonaws.services.dynamodb.model.ScanResult;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
+import com.nokia.nrcc.TransientMapCache;
 
 
 public class DynamoDB extends AbstractDB implements DB {
@@ -61,9 +62,13 @@ public class DynamoDB extends AbstractDB implements DB {
 	Type locationListType = new TypeToken<ArrayList<Location>>() {}.getType();
 	Type fingerprintType = new TypeToken<Fingerprint>() {}.getType();
 
+	TransientMapCache<Location,Fingerprint> loc2fpCache;
+	TransientMapCache<Mac,Set<Location>> mac2locCache;
+	final boolean useCache;
 	
-	public DynamoDB() {
+	public DynamoDB(int cachePeriod) {
 		log.info ("Starting Dynamo DB");
+		
 		GsonBuilder gBuilder = new GsonBuilder();
 		gBuilder.registerTypeAdapter(Mac.class, new Mac().new MacDeserializer()).create();
 		gson = gBuilder.create();
@@ -74,35 +79,16 @@ public class DynamoDB extends AbstractDB implements DB {
 		}
 		AWSCredentials credentials = new BasicAWSCredentials(key, secret);
 		client = new AmazonDynamoDBClient(credentials);
-	}
 
-	/*
-	public boolean bind(Bind bind) {
-		if (bind == null) {
-			log.warn("bind received null bind");
-			return false;
+		if (cachePeriod > 0) {
+			useCache = true;
+			loc2fpCache = new TransientMapCache<Location,Fingerprint>(cachePeriod);
+			mac2locCache = new TransientMapCache<Mac,Set<Location>>(cachePeriod);
+		} else {
+			useCache = false;
 		}
 		
-		// record the new fingerprint for this location
-		Fingerprint fp = new Fingerprint (bind.scans);
-		put(bind.location, fp);
-        
-        // update the locations for these macs
-        for (Mac mac : fp.getMacs()) {
-        	// add this location to the entry for these macs
-        	// unless it already exists
-        	Set<Location> locations = get(mac);
-        	if (locations == null) {
-        		locations = new HashSet<Location>();
-        	}
-        	if (!locations.contains(bind.location)) {
-        		locations.add(bind.location);
-        		put(mac,locations);
-        	}
-        }
-		return true;
 	}
-	*/
 
 	// Map<Location,Fingerprint> operations
 	
@@ -117,6 +103,14 @@ public class DynamoDB extends AbstractDB implements DB {
 
 	@Override
 	Fingerprint get(Location location) {
+		if (useCache) {
+			Fingerprint cachedFP = loc2fpCache.get(location); 
+			if (cachedFP != null) {
+				log.warn("found cached fp");
+				return cachedFP;
+			}
+		}
+
 		String locationJson = gson.toJson(location);
 		GetItemRequest getItemRequest = new GetItemRequest()
 		.withTableName(loc2fpTable)
@@ -132,11 +126,14 @@ public class DynamoDB extends AbstractDB implements DB {
 			String json = value.getS();
 			assert (json.length() > 2);
 			Fingerprint fingerprint = gson.fromJson(json, fingerprintType);
+			if (useCache) {
+				loc2fpCache.put(location,fingerprint);
+			}
 			return fingerprint;
 		}
 		return null;
 	}
-	
+
 	@Override	
 	void put(Location location, Fingerprint fp) {
 		Map<String, AttributeValue> item = new HashMap<String, AttributeValue>();
@@ -146,6 +143,9 @@ public class DynamoDB extends AbstractDB implements DB {
 		item.put(fpAttr, new AttributeValue().withS(fpJson));
 		PutItemRequest itemRequest = new PutItemRequest().withTableName(loc2fpTable).withItem(item);
         client.putItem(itemRequest);
+        if (useCache) {
+        	loc2fpCache.put(location, fp);
+        }
 	}
 
 	@Override
@@ -154,6 +154,9 @@ public class DynamoDB extends AbstractDB implements DB {
 		Key key = new Key().withHashKeyElement(new AttributeValue().withS(locationJson));
 		DeleteItemRequest deleteItemRequest = new DeleteItemRequest().withTableName(loc2fpTable).withKey(key);
 		client.deleteItem(deleteItemRequest);
+		if (useCache) {
+			loc2fpCache.remove(location);
+		}
 	}
 
 	void clearTable(String tableName, String keyName) {
@@ -179,6 +182,9 @@ public class DynamoDB extends AbstractDB implements DB {
 	@Override
 	void clearLocations() {
 		clearTable(loc2fpTable, locAttr);
+		if (useCache) {
+			loc2fpCache.clear();
+		}
 	}
 	
 	// Map<Mac,Set<Location>> operations
@@ -194,6 +200,14 @@ public class DynamoDB extends AbstractDB implements DB {
 
 	@Override
 	Set<Location> get(Mac mac) {
+		if (useCache) {
+			Set<Location> cachedLocations = mac2locCache.get(mac); 
+			if (cachedLocations != null) {
+				log.warn("found cached locations");
+				return cachedLocations;
+			}
+		}
+		
 		String macJson = gson.toJson(mac);
 		GetItemRequest getItemRequest = new GetItemRequest()
 		.withTableName(mac2locsTable)
@@ -210,6 +224,9 @@ public class DynamoDB extends AbstractDB implements DB {
 			assert (locationsJson.length() > 2);
 			List<Location> locationList = gson.fromJson(locationsJson, locationListType);
 			Set<Location> locations = new HashSet<Location> (locationList);
+			if (useCache) {
+				mac2locCache.put(mac, locations);
+			}
 			return locations;
 		}
 		return null;
@@ -224,6 +241,9 @@ public class DynamoDB extends AbstractDB implements DB {
 		item.put(locsAttr, new AttributeValue().withS(locationsJson));
 		PutItemRequest itemRequest = new PutItemRequest().withTableName(mac2locsTable).withItem(item);
         client.putItem(itemRequest);
+		if (useCache) {
+			mac2locCache.put(mac, locations);
+		}
 	}
 
 	@Override
@@ -232,11 +252,15 @@ public class DynamoDB extends AbstractDB implements DB {
 		Key key = new Key().withHashKeyElement(new AttributeValue().withS(macJson));
 		DeleteItemRequest deleteItemRequest = new DeleteItemRequest().withTableName(mac2locsTable).withKey(key);
 		client.deleteItem(deleteItemRequest);
+		if (useCache) {
+			mac2locCache.remove(mac);
+		}
 	}
 
 	@Override
 	void clearMacs() {
 		clearTable(mac2locsTable, macAttr);
+		mac2locCache.clear();
 	}
 	
 	// Map<Location, Scans>.... not implemented -- we may want to do something different
