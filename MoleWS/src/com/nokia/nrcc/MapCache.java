@@ -18,21 +18,17 @@
 * 
 */
 
-package com.nokia.mole;
+package com.nokia.nrcc;
 
-import java.util.List;
-import java.util.Map;
 
-public interface DB {
+public interface MapCache<K,V> {
 
-	public abstract boolean bind(Bind bind);
-
-	public abstract List<LocationProbability> query(Query query);
-
-	public abstract boolean remove(Remove remove);
-
-	public abstract void clear();
-
-	public abstract Map<Location, List<Scan>> getLocationScans();
-
+	public V get(K key);
+	
+	public void put(K key, V value);
+	
+	public boolean containsKey(K key);
+	
+	public void remove(K key);
+	
 }

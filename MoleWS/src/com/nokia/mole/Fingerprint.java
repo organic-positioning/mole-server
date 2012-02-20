@@ -33,6 +33,7 @@ public class Fingerprint implements Serializable {
 	private static final long serialVersionUID = -7456500317937021899L;
 	static Logger log = Logger.getLogger(Fingerprint.class);
 	final static double penalty = 4.;
+	final static double normalizer = (1./penalty)*2.;
 	
 	Map<Mac,Histogram> mac2histogram = new HashMap<Mac,Histogram>();
 		
@@ -99,8 +100,15 @@ public class Fingerprint implements Serializable {
 				log.debug ("missing B mac="+mac+" score="+score+ " weight="+histB.weight);
 			}
 		}
-		
-		return score;
+
+		if (hitCount > 0) {
+			// normalize from [1...0...2xMaxPenalty] -> [1...0]
+			double normalized = (score + normalizer) / (1. + normalizer);
+			log.debug("score="+score+" normalized="+normalized);
+			return normalized;
+		} else {
+			return 0;
+		}
 	}
 	
 }

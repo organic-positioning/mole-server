@@ -26,9 +26,6 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.log4j.Logger;
 
 
-public class MemoryDB implements DB, Serializable {
+public class MemoryDB extends AbstractDB implements DB, Serializable {
 	
 	private static final long serialVersionUID = -6877252405133374978L;
 	static Logger log = Logger.getLogger(MemoryDB.class);
@@ -65,90 +62,6 @@ public class MemoryDB implements DB, Serializable {
 		return sb.toString();
 	}
 	
-	public boolean bind(Bind bind) {
-		if (bind == null) {
-			log.warn("bind received null bind");
-			return false;
-		}
-		// TODO use *list* of binds to create fingerprint, not just most recent one
-
-		Fingerprint fp = new Fingerprint (bind.scans);
-		loc2fp.put(bind.location, fp);
-		for (Mac mac : fp.getMacs()) {
-			if (! mac2loc.containsKey(mac)) {
-				Set<Location> locations = new HashSet<Location>();
-				mac2loc.put(mac, locations);
-			}
-			Set<Location> locations = mac2loc.get(mac);
-			if (locations != null) {
-				locations.add(bind.location);
-			}
-		}
-		if (recordScans) {
-			location2scans.put(bind.location, bind.scans);
-		}
-		
-		return true;
-	}
-
-	public List<LocationProbability> query(Query query) {
-		List<LocationProbability> locProbabilities = new ArrayList<LocationProbability>();
-		try {
-			Fingerprint userFp = new Fingerprint (query.scans);
-			Set<Location> potentialLocations = new HashSet<Location>();
-			for (Mac mac : userFp.getMacs()) {
-				Set<Location> macsLocations = mac2loc.get(mac);
-				if (macsLocations != null) {
-					potentialLocations.addAll(macsLocations);
-				}
-			}
-
-
-			for (Location location : potentialLocations) {
-				Fingerprint poiFP = loc2fp.get(location);
-				if (poiFP != null) {
-					double similarity = Fingerprint.similarity(userFp, poiFP);
-					log.debug(location+" score="+similarity);
-					locProbabilities.add(new LocationProbability(location, similarity));
-				}
-			}
-		} catch (NullPointerException ex) {
-			log.warn("NPE parsing query");
-		}
-
-		final int MaxLocationsReturnedByQuery = 20;
-		Collections.sort(locProbabilities);
-		return locProbabilities.subList(0, locProbabilities.size() > MaxLocationsReturnedByQuery ? MaxLocationsReturnedByQuery : locProbabilities.size());
-	}
-
-	public boolean remove(Remove remove) {
-		if (remove== null) {
-			log.warn("remove received null remove");
-			return false;
-		}
-		log.debug("remove "+remove.location+ " start");
-		
-		int macCount = 0;
-		Fingerprint fp = loc2fp.get(remove.location);
-		if (fp != null) {
-			for (Mac mac : fp.getMacs()) {
-				Set<Location> macsLocations = mac2loc.get(mac);
-				if (macsLocations != null) {
-					macsLocations.remove(remove.location);
-					macCount++;
-				}
-				if (macsLocations.isEmpty()) {
-					mac2loc.remove(mac);
-				}
-			}
-		}
-		boolean ok = loc2fp.containsKey(remove.location);
-		if (ok) {
-			loc2fp.remove(remove.location);
-		}
-		log.debug("remove "+remove.location+ " found="+ok+" macCount="+macCount);
-		return ok;
-	}
 	
 	public MemoryDB () {
 		log.warn ("MemoryDB dbFilename="+dbFilename+ " recordingScans="+recordScans);
@@ -193,11 +106,51 @@ public class MemoryDB implements DB, Serializable {
 		} 
     }
 
-	public void clear() {
-		loc2fp.clear();
-		mac2loc.clear();
-		// don't clear location2scans
-	}
+	
+    @Override
+    void put (Location location, Fingerprint fp) {
+    	loc2fp.put(location, fp);
+    }
+    @Override
+    boolean containsKey(Mac mac) {
+    	return mac2loc.containsKey(mac);
+    }
+    @Override
+    void put (Mac mac, Set<Location> locations) {
+    	mac2loc.put(mac, locations);
+    }
+    @Override
+    Set<Location> get(Mac mac) {
+    	return mac2loc.get(mac);
+    }
+    @Override
+    void put(Location location, List<Scan> scans) {
+    	location2scans.put(location, scans);
+    }
+    @Override
+    Fingerprint get(Location location) {
+    	return loc2fp.get(location);
+    }
+    @Override
+    void remove(Mac mac) {
+    	mac2loc.remove(mac);
+    }
+    @Override
+    boolean containsKey(Location location) {
+    	return loc2fp.containsKey(location);
+    }
+    @Override
+    void remove(Location location) {
+    	loc2fp.remove(location);
+    }
+    @Override
+    void clearLocations() {
+    	loc2fp.clear();
+    }
+    @Override
+    void clearMacs() {
+    	mac2loc.clear();
+    }
 
 	public Map<Location, List<Scan>> getLocationScans() {
 		return location2scans;

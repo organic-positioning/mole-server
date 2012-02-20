@@ -91,7 +91,7 @@ public class MoleWS extends AbstractHandler
     		db = MemoryDB.loadDB();
     	}
     	GsonBuilder gBuilder = new GsonBuilder();
-		gBuilder.registerTypeAdapter(Mac.class, new Mac().new MacDeserializer()).create();
+    	gBuilder.registerTypeAdapter(Mac.class, new Mac().new MacDeserializer()).create();
     	gson = gBuilder.create();
     	log.info ("Started MoleWS "+ "version="+version);
     }

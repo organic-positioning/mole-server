@@ -53,14 +53,25 @@ public class DBTest {
 	
     public static void main(String[] args) {
     	System.out.println ("Starting internal API test");
-    	MemoryDB.dbFilename = "/tmp/moleWS.db";
+    	boolean useMemoryDB = true;
     	
-    	
-    	//DB db = MemoryDB.loadDB();
-    	//log.debug(db);
-    	//DB db = new MemoryDB();
-    	
-    	DB db = new DynamoDB();
+    	DB db = null;
+    	if (useMemoryDB) {
+    		MemoryDB.dbFilename = "/tmp/moleWS.db";
+    		db = MemoryDB.loadDB();
+    		log.debug(db);
+    		//DB db = new MemoryDB();
+    	} else {
+    		db = new DynamoDB();
+    		log.warn("Deleting db...");
+//    		try {
+//				Thread.sleep(10000);
+//			} catch (InterruptedException e) {
+//				// TODO Auto-generated catch block
+//				e.printStackTrace();
+//			}
+    		db.clear();
+    	}
     	
     	Source source = new Source ("key1", "secret1", "device1", "version1");
     	
@@ -68,6 +79,7 @@ public class DBTest {
     	Location loc1dup = new Location("container1", "poi1");
     	if (! loc1.equals(loc1dup)) {
     		log.fatal("loc1 != loc1dup");
+    		System.exit(-1);
     	}
     	Location loc2a = new Location("container2", "poiA");
     	Location loc2b = new Location("container2", "poiB");
@@ -75,19 +87,24 @@ public class DBTest {
     	Remove remove1 = new Remove(loc1dup, source);
     	if (db.remove(remove1)) {
     		log.fatal("cannot remove from empty db");
+    		System.exit(-1);
     	}
     	
     	if (!loc1.equals(loc1)) {
     		log.fatal("loc equals problem");
+    		System.exit(-1);
     	}
     	if (!loc1.equals(loc1dup)) {
     		log.fatal("loc1dup equals problem");
+    		System.exit(-1);
     	}
     	if (loc1.equals(loc2a)) {
     		log.fatal("loc2a equals problem");
+    		System.exit(-1);
     	}
     	if (loc2a.equals(loc2b)) {
     		log.fatal("loc2a-b equals problem");
+    		System.exit(-1);
     	}
     	
 
@@ -97,6 +114,10 @@ public class DBTest {
     	Mac mac1 = new Mac ("00:00:00:00:00:01");
     	Mac mac2 = new Mac ("00:00:00:00:00:02");
     	Mac mac3 = new Mac ("00:00:00:00:00:03");
+
+    	Mac mac4 = new Mac ("00:00:00:00:00:04");
+    	Mac mac5 = new Mac ("00:00:00:00:00:05");
+    	Mac mac6 = new Mac ("00:00:00:00:00:06");
     	
     	Reading reading1a = new Reading (mac1, "ssid1", 100, 70);
     	Reading reading1b = new Reading (mac2, "ssid2", 100, 75);
@@ -122,12 +143,20 @@ public class DBTest {
     	readings3.add(reading3b);
     	readings3.add(reading3c);
 
-    	Reading reading4a = new Reading (mac1, "ssid1", 100, 40);
-    	Reading reading4b = new Reading (mac2, "ssid2", 100, 40);
+    	Reading reading4a = new Reading (mac4, "ssid4", 100, 40);
+    	Reading reading4b = new Reading (mac5, "ssid5", 100, 40);
+    	Reading reading4c = new Reading (mac5, "ssid5", 100, 39);
+    	Reading reading4d = new Reading (mac5, "ssid5", 100, 38);
+    	Reading reading4e = new Reading (mac5, "ssid8", 100, 40);
+    	Reading reading4f = new Reading (mac6, "ssid8", 100, 40);
     	//Reading reading4c = new Reading (mac3, "ssid3", 100, 40);
     	List<Reading> readings4 = new ArrayList<Reading>();
     	readings4.add(reading4a);
     	readings4.add(reading4b);
+    	readings4.add(reading4c);
+    	readings4.add(reading4d);
+    	readings4.add(reading4e);
+    	readings4.add(reading4f);
     	//readings4.add(reading4c);
 
     	Scan scan1 = new Scan(readings1);
@@ -162,7 +191,8 @@ public class DBTest {
     	Query query1 = new Query(scanList1, source);
     	List<LocationProbability> q1result = db.query(query1);
     	if (q1result.size() != 0) {
-    		log.fatal("empty db returned result");	
+    		log.fatal("empty db returned result");
+    		System.exit(-1);
     	}
     	
     	/////////////////////////////////////////////////////////////
@@ -173,13 +203,16 @@ public class DBTest {
     	db.bind(bind1);
     	q1result = db.query(query1);
     	if (q1result.size() != 1) {
-    		log.fatal("should return single result");	
+    		log.fatal("should return single result");
+    		System.exit(-1);
     	}
     	if (! q1result.get(0).location.equals(loc1)) {
     		log.fatal("should return single loc1");
+    		System.exit(-1);
     	}
     	if (! db.remove(remove1)) {
     		log.fatal("should be able to remove location1");
+    		System.exit(-1);
     	}
     	
     	/////////////////////////////////////////////////////////////
@@ -192,12 +225,15 @@ public class DBTest {
     	List<LocationProbability> q2result = db.query(query2);
     	if (q2result.size() != 2) {
     		log.fatal("should return two results");
+    		System.exit(-1);
     	}
     	if (! q2result.get(0).location.equals(loc1)) {
     		log.fatal("should return loc1 "+q2result.get(0));
+    		System.exit(-1);
     	}
     	if (! q2result.get(1).location.equals(loc2a)) {
     		log.fatal("should return loc1 "+q2result.get(1));
+    		System.exit(-1);
     	}
     	log.warn("\n\nstarting query3");
     	Query query3 = new Query(scanList3nomatch, source);
@@ -205,10 +241,16 @@ public class DBTest {
     	log.debug("q3result" + q3result);
     	if (q3result.size() != 0) {
     		log.fatal("should return no results");
+    		System.exit(-1);
     	}
-
+    	
     	log.debug("\n\ndb " + db);
-    	MemoryDB.saveDB(db);
+    	if (useMemoryDB) {
+    		MemoryDB.saveDB(db);
+    	} else {
+    		log.warn("Finished Dynamo tests");
+    		System.exit(0);
+    	}
     	//DB db3 = MemoryDB.loadDB();
     	//log.debug("\n\ndb3" + db3);
     	
